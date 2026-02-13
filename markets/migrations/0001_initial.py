@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
                 ('category', models.CharField(choices=[('Sports', 'Sports'), ('Politics', 'Politics'), ('Economy', 'Economy'), ('Crypto', 'Crypto'), ('Environment', 'Environment')], max_length=100)),
                 ('image_url', models.URLField(blank=True, max_length=1000, null=True)),
                 ('yes_probability', models.IntegerField(default=50)),
-                ('volume', models.CharField(default='$0', max_length=100)),
+                ('volume', models.CharField(default='KSh 0', max_length=100)),
                 ('is_live', models.BooleanField(default=True)),
                 ('end_date', models.CharField(max_length=100)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),

@@ -20,6 +20,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_regex = RegexValidator(regex=r'^\+?1?\d{9,15}$', message="Phone number must be entered in the format: '0718693484'.")
     phone_number = models.CharField(validators=[phone_regex], max_length=17, unique=True)
     full_name = models.CharField(max_length=255)
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    kyc_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
@@ -31,3 +33,18 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.phone_number
+    
+    def get_user_statistics(self):
+        """Get user statistics: total wagered, wins, losses"""
+        from markets.models import Bet
+        bets = Bet.objects.filter(user=self)
+        total_wagered = sum(float(bet.amount) for bet in bets if bet.result != 'PENDING')
+        won_bets = bets.filter(result='WON').count()
+        lost_bets = bets.filter(result='LOST').count()
+        win_rate = (won_bets / (won_bets + lost_bets) * 100) if (won_bets + lost_bets) > 0 else 0
+        return {
+            'total_wagered': total_wagered,
+            'wins': won_bets,
+            'losses': lost_bets,
+            'win_rate': round(win_rate, 2)
+        }

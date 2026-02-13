@@ -81,6 +81,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'api.wsgi.app'
 
+AUTHENTICATION_BACKENDS = [
+    'users.backends.PhoneNumberBackend',
+]
+
 
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases
@@ -148,10 +152,13 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Session and Cookie settings for cross-origin development
-SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'Lax'
+# Using None to allow cookies across different ports in local dev
+SESSION_COOKIE_SAMESITE = None
+SESSION_COOKIE_HTTPONLY = False  # Allow reading for debugging
+CSRF_COOKIE_SAMESITE = None
 CSRF_COOKIE_HTTPONLY = False  # Allow JS to read CSRF token if needed
-SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = False  # False for local development (http)
 CSRF_COOKIE_SECURE = False
+SESSION_COOKIE_DOMAIN = None  # Let Django use the default domain
+SESSION_COOKIE_AGE = 1209600  # 2 weeks in seconds
 
