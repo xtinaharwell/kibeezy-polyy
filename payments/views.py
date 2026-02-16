@@ -1,29 +1,46 @@
 import json
 import logging
 from django.http import JsonResponse
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.utils import timezone
 from decimal import Decimal
 from .mpesa_integration import get_mpesa_client
 from .models import Transaction
 from api.validators import validate_amount, ValidationError
+from users.models import CustomUser
 
 logger = logging.getLogger(__name__)
 
+def get_authenticated_user(request):
+    """Get authenticated user from session or X-User-Phone-Number header"""
+    # Try session-based auth first
+    if request.user and request.user.is_authenticated:
+        return request.user
+    
+    # Fall back to header-based auth
+    phone_number = request.headers.get('X-User-Phone-Number')
+    if phone_number:
+        try:
+            return CustomUser.objects.get(phone_number=phone_number)
+        except CustomUser.DoesNotExist:
+            return None
+    
+    return None
 
+
+
+@csrf_exempt
 @require_http_methods(["POST"])
 def initiate_stk_push(request):
-    # Check authentication
-    if not request.user or not request.user.is_authenticated:
+    # Get authenticated user from session or header
+    user = get_authenticated_user(request)
+    if not user:
         logger.warning(f"Unauthorized STK push attempt")
         return JsonResponse({'error': 'Authentication required'}, status=401)
     
-    # Check if user is KYC verified
-    if not request.user.kyc_verified:
-        return JsonResponse({
-            'error': 'KYC verification required',
-            'message': 'Please verify your phone number before making deposits'
-        }, status=403)
+    # TODO: Add KYC verification check once onboarding flow is ready
+    # For now, allow all authenticated users to make deposits
     
     try:
         data = json.loads(request.body)
@@ -43,25 +60,25 @@ def initiate_stk_push(request):
         
         # Initiate STK push
         response = client.initiate_stk_push(
-            request.user.phone_number,
+            user.phone_number,
             amount,
-            account_reference=f"KIBEEZY_{request.user.id}"
+            account_reference=f"KIBEEZY_{user.id}"
         )
         
         if response.get('ResponseCode') == '0':
             # Create a pending transaction
             transaction = Transaction.objects.create(
-                user=request.user,
+                user=user,
                 type='DEPOSIT',
                 amount=amount,
-                phone_number=request.user.phone_number,
+                phone_number=user.phone_number,
                 checkout_request_id=response.get('CheckoutRequestID'),
                 merchant_request_id=response.get('MerchantRequestID'),
                 status='PENDING',
                 description=f'M-Pesa deposit of KSH {amount}'
             )
             
-            logger.info(f"STK Push initiated for user {request.user.phone_number}, amount: {amount}")
+            logger.info(f"STK Push initiated for user {user.phone_number}, amount: {amount}")
             return JsonResponse({
                 'message': 'STK Push initiated successfully',
                 'checkout_id': response.get('CheckoutRequestID'),
@@ -81,6 +98,159 @@ def initiate_stk_push(request):
     except Exception as e:
         logger.error(f"STK Push error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def b2c_result_callback(request):
+    """
+    Handle B2C result callback from M-Pesa Daraja API
+    
+    Safaricom will POST result to ResultURL with callback containing:
+    - Result (0 = success)
+    - ResultCode (0 = success)
+    - OriginatorConversationID or ExternalReference (to match transaction)
+    - ResponseDescription
+    - ConversationID
+    
+    Flow:
+    1. Parse callback data
+    2. Find matching Transaction by external_ref or conversation_id
+    3. If success: mark COMPLETED and credit user wallet
+    4. If failed: mark FAILED and optionally retry
+    5. Respond with 200 OK to Daraja
+    """
+    import logging
+    from django.db import transaction as db_transaction
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        data = json.loads(request.body)
+        logger.info(f"B2C callback received: {json.dumps(data)}")
+        
+        # Extract key fields from callback
+        # Daraja may send different field names in Result and in timeout callback
+        result_code = data.get('Result', {}).get('ResultCode') or data.get('ResultCode')
+        external_ref = (
+            data.get('Result', {}).get('ExternalReference') or 
+            data.get('ExternalReference') or
+            data.get('MerchantRequestID')
+        )
+        conversation_id = (
+            data.get('Result', {}).get('ConversationID') or 
+            data.get('ConversationID') or
+            data.get('OriginatorConversationID')
+        )
+        response_description = (
+            data.get('Result', {}).get('ResponseDescription') or 
+            data.get('ResponseDescription', 'No description')
+        )
+        
+        if not external_ref and not conversation_id:
+            logger.warning(f"B2C callback missing identifiers: {data}")
+            return JsonResponse({'status': 'error', 'message': 'Missing identifiers'}, status=400)
+        
+        # Find transaction by external_ref or conversation_id
+        tx = None
+        try:
+            if external_ref:
+                tx = Transaction.objects.get(external_ref=external_ref)
+            elif conversation_id:
+                # Search in mpesa_response JSON for matching conversation_id
+                tx = Transaction.objects.filter(
+                    mpesa_response__contains={'conversation_id': conversation_id}
+                ).first()
+        except Transaction.DoesNotExist:
+            logger.warning(f"Transaction not found for external_ref={external_ref}, conv_id={conversation_id}")
+            # Still respond 200 OK so Daraja doesn't keep retrying
+            return JsonResponse({'status': 'error', 'message': 'transaction_not_found'})
+        
+        if not tx:
+            logger.warning(f"No transaction found for callback: {external_ref or conversation_id}")
+            return JsonResponse({'status': 'error', 'message': 'transaction_not_found'})
+        
+        # Check result code (0 = success)
+        is_success = result_code == 0 or result_code == '0'
+        
+        with db_transaction.atomic():
+            # Idempotency: check if already processed
+            if tx.status == Transaction.COMPLETED:
+                logger.info(f"Transaction {tx.id} already marked COMPLETED, skipping")
+                return JsonResponse({'status': 'ok', 'message': 'already_processed'})
+            
+            if is_success:
+                # Payment successful
+                logger.info(f"B2C payout success for transaction {tx.id}, recipient {tx.user.phone_number}")
+                
+                tx.status = Transaction.COMPLETED
+                tx.mpesa_response = tx.mpesa_response or {}
+                tx.mpesa_response.update({
+                    'callback_success': True,
+                    'callback_result_code': result_code,
+                    'callback_description': response_description,
+                    'callback_time': timezone.now().isoformat()
+                })
+                tx.save()
+                
+                # Credit user wallet immediately
+                user = tx.user
+                user.balance += tx.amount
+                user.save()
+                
+                logger.info(
+                    f"User {user.phone_number} credited KES {tx.amount}, "
+                    f"new balance: {user.balance}"
+                )
+                
+                # Send notification (optional)
+                _send_payout_notification(user, tx)
+            
+            else:
+                # Payment failed
+                logger.warning(
+                    f"B2C payout failed for transaction {tx.id}, code={result_code}, "
+                    f"description={response_description}"
+                )
+                
+                tx.status = Transaction.FAILED
+                tx.mpesa_response = tx.mpesa_response or {}
+                tx.mpesa_response.update({
+                    'callback_success': False,
+                    'callback_result_code': result_code,
+                    'callback_description': response_description,
+                    'callback_time': timezone.now().isoformat()
+                })
+                tx.save()
+                
+                # Log for manual review / retry
+                logger.error(
+                    f"Payout failed: tx_id={tx.id}, user={tx.user.phone_number}, "
+                    f"amount={tx.amount}, code={result_code}"
+                )
+        
+        # Always respond 200 OK to Daraja
+        return JsonResponse({'status': 'ok'}, status=200)
+    
+    except json.JSONDecodeError:
+        logger.error("B2C callback: invalid JSON")
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    except Exception as e:
+        logger.error(f"B2C callback processing error: {e}", exc_info=True)
+        # Still return 200 to prevent Daraja retries
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=200)
+
+
+def _send_payout_notification(user, transaction):
+    """
+    Send user a notification of successful payout (SMS, in-app, etc)
+    (Placeholder for future notification system)
+    """
+    # TODO: implement notification system
+    # e.g., send SMS via Africastalking
+    # e.g., create in-app notification record
+    logger = logging.getLogger(__name__)
+    logger.info(f"Payout notification: User {user.phone_number} received KES {transaction.amount}")
 
 
 @ensure_csrf_cookie

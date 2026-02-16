@@ -3,6 +3,7 @@ import logging
 import re
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
@@ -10,38 +11,57 @@ from .models import CustomUser
 
 logger = logging.getLogger(__name__)
 
+def get_authenticated_user(request):
+    """Get authenticated user from session or X-User-Phone-Number header"""
+    # Try session-based auth first
+    if request.user and request.user.is_authenticated:
+        return request.user
+    
+    # Fall back to header-based auth
+    phone_number = request.headers.get('X-User-Phone-Number')
+    if phone_number:
+        try:
+            return CustomUser.objects.get(phone_number=phone_number)
+        except CustomUser.DoesNotExist:
+            return None
+    
+    return None
 
+
+
+@csrf_exempt
 @require_http_methods(["POST"])
 def start_kyc_verification(request):
     """Start KYC verification process with OTP"""
-    if not request.user or not request.user.is_authenticated:
+    user = get_authenticated_user(request)
+    if not user:
         return JsonResponse({'error': 'Authentication required'}, status=401)
     
     try:
         data = json.loads(request.body)
-        phone_number = data.get('phone_number', request.user.phone_number)
+        phone_number = data.get('phone_number', user.phone_number)
         
         # Validate phone number
         if not _validate_phone_number(phone_number):
             return JsonResponse({'error': 'Invalid phone number format'}, status=400)
         
         # Check if phone is already verified with another account
-        if CustomUser.objects.filter(phone_number=phone_number).exclude(id=request.user.id).exists():
+        if CustomUser.objects.filter(phone_number=phone_number).exclude(id=user.id).exists():
             return JsonResponse({'error': 'Phone number already verified with another account'}, status=400)
         
         # Generate OTP
         otp = _generate_otp()
         
         # Store OTP in cache (expires in 10 minutes)
-        cache_key = f"kyc_otp_{request.user.id}"
+        cache_key = f"kyc_otp_{user.id}"
         cache.set(cache_key, otp, 600)
         
         # Store pending phone number
-        cache_key_phone = f"kyc_phone_{request.user.id}"
+        cache_key_phone = f"kyc_phone_{user.id}"
         cache.set(cache_key_phone, phone_number, 600)
         
         # Log attempt
-        logger.info(f"KYC OTP generation for user {request.user.id}, phone: {phone_number}")
+        logger.info(f"KYC OTP generation for user {user.id}, phone: {phone_number}")
         
         # In production, send real SMS
         # For now, return OTP for testing
@@ -66,10 +86,12 @@ def start_kyc_verification(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def verify_kyc_otp(request):
     """Verify KYC OTP and complete verification"""
-    if not request.user or not request.user.is_authenticated:
+    user = get_authenticated_user(request)
+    if not user:
         return JsonResponse({'error': 'Authentication required'}, status=401)
     
     try:
@@ -80,7 +102,7 @@ def verify_kyc_otp(request):
             return JsonResponse({'error': 'OTP must be 6 digits'}, status=400)
         
         # Get cached OTP
-        cache_key = f"kyc_otp_{request.user.id}"
+        cache_key = f"kyc_otp_{user.id}"
         stored_otp = cache.get(cache_key)
         
         if not stored_otp:
@@ -88,13 +110,13 @@ def verify_kyc_otp(request):
         
         if otp != stored_otp:
             # Increment failed attempts
-            attempts_key = f"kyc_otp_attempts_{request.user.id}"
+            attempts_key = f"kyc_otp_attempts_{user.id}"
             attempts = cache.get(attempts_key, 0)
             
             if attempts >= 3:
                 # Lock out after 3 failed attempts
                 cache.delete(cache_key)
-                cache.delete(f"kyc_phone_{request.user.id}")
+                cache.delete(f"kyc_phone_{user.id}")
                 return JsonResponse({
                     'error': 'Too many failed attempts. Please request a new OTP.'
                 }, status=429)
@@ -103,19 +125,19 @@ def verify_kyc_otp(request):
             return JsonResponse({'error': 'Invalid OTP'}, status=400)
         
         # OTP is correct, mark as verified
-        phone_number = cache.get(f"kyc_phone_{request.user.id}")
+        phone_number = cache.get(f"kyc_phone_{user.id}")
         
-        request.user.phone_number = phone_number
-        request.user.kyc_verified = True
-        request.user.kyc_verified_at = timezone.now()
-        request.user.save()
+        user.phone_number = phone_number
+        user.kyc_verified = True
+        user.kyc_verified_at = timezone.now()
+        user.save()
         
         # Clean up cache
         cache.delete(cache_key)
-        cache.delete(f"kyc_phone_{request.user.id}")
-        cache.delete(f"kyc_otp_attempts_{request.user.id}")
+        cache.delete(f"kyc_phone_{user.id}")
+        cache.delete(f"kyc_otp_attempts_{user.id}")
         
-        logger.info(f"KYC verified for user {request.user.id}, phone: {phone_number}")
+        logger.info(f"KYC verified for user {user.id}, phone: {phone_number}")
         
         return JsonResponse({
             'message': 'Phone number verified successfully',

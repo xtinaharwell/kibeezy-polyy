@@ -1,19 +1,49 @@
 import json
+import logging
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal
 from .models import Market, Bet
 from payments.models import Transaction
+from users.models import CustomUser
 
+logger = logging.getLogger(__name__)
+
+def get_authenticated_user(request):
+    """
+    Get authenticated user from either:
+    1. Session (if session cookie exists)
+    2. X-User-Phone-Number header (for development/CORS)
+    """
+    # First try session
+    if request.user and request.user.is_authenticated:
+        return request.user
+    
+    # Fallback to header-based authentication for development
+    phone_number = request.headers.get('X-User-Phone-Number')
+    if phone_number:
+        try:
+            user = CustomUser.objects.get(phone_number=phone_number)
+            if user.is_active:
+                return user
+        except CustomUser.DoesNotExist:
+            pass
+    
+    return None
+
+@csrf_exempt
 @require_http_methods(["GET"])
 def user_dashboard(request):
     # Check authentication
-    if not request.user or not request.user.is_authenticated:
+    user = get_authenticated_user(request)
+    if not user:
+        logger.warning(f"Dashboard access denied - user not authenticated")
         return JsonResponse({'error': 'Authentication required'}, status=401)
-    """Get user dashboard data: balance, bet history, statistics"""
+    
+    logger.info(f"Dashboard loaded for user: {user.phone_number}")
     
     try:
-        user = request.user
         
         # Get user bets with market info
         bets = Bet.objects.filter(user=user).select_related('market').order_by('-timestamp')
@@ -52,15 +82,17 @@ def user_dashboard(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@csrf_exempt
 @require_http_methods(["GET"])
 def transaction_history(request):
     # Check authentication
-    if not request.user or not request.user.is_authenticated:
+    user = get_authenticated_user(request)
+    if not user:
+        logger.warning(f"History access denied - user not authenticated")
         return JsonResponse({'error': 'Authentication required'}, status=401)
-    """Get user's transaction history"""
     
     try:
-        user = request.user
+        logger.info(f"Transaction history loaded for user: {user.phone_number}")
         transactions = Transaction.objects.filter(user=user)[:50]  # Last 50 transactions
         
         transactions_data = []
@@ -83,11 +115,14 @@ def transaction_history(request):
 
 
 @require_http_methods(["POST"])
+@csrf_exempt
+@require_http_methods(["POST"])
 def initiate_withdrawal(request):
-    # Check authentication
-    if not request.user or not request.user.is_authenticated:
-        return JsonResponse({'error': 'Authentication required'}, status=401)
     """Initiate M-Pesa withdrawal for user"""
+    # Get authenticated user from session or header
+    user = get_authenticated_user(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
     
     try:
         data = json.loads(request.body)
@@ -95,8 +130,6 @@ def initiate_withdrawal(request):
         
         if not amount or amount <= 0:
             return JsonResponse({'error': 'Invalid amount'}, status=400)
-        
-        user = request.user
         
         # Check if user has enough balance
         if amount > user.balance:

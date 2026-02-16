@@ -2,21 +2,42 @@ import json
 import logging
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal
 from .models import Market, Bet
 from payments.models import Transaction
 from api.validators import validate_amount, validate_bet_outcome, ValidationError
+from users.models import CustomUser
 
 logger = logging.getLogger(__name__)
+
+def get_authenticated_user(request):
+    """Get authenticated user from session or X-User-Phone-Number header"""
+    # Try session-based auth first
+    if request.user and request.user.is_authenticated:
+        return request.user
+    
+    # Fall back to header-based auth
+    phone_number = request.headers.get('X-User-Phone-Number')
+    if phone_number:
+        try:
+            return CustomUser.objects.get(phone_number=phone_number)
+        except CustomUser.DoesNotExist:
+            return None
+    
+    return None
+
 
 def list_markets(request):
     markets = Market.objects.all().values()
     return JsonResponse(list(markets), safe=False)
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def place_bet(request):
-    # Check authentication
-    if not request.user or not request.user.is_authenticated:
+    # Get authenticated user from session or header
+    user = get_authenticated_user(request)
+    if not user:
         return JsonResponse({'error': 'Authentication required'}, status=401)
     try:
         data = json.loads(request.body)
@@ -47,8 +68,6 @@ def place_bet(request):
         # Check if market is open
         if market.status != 'OPEN':
             return JsonResponse({'error': f'Market is {market.status.lower()}'}, status=400)
-        
-        user = request.user
         
         # Check if user has sufficient balance
         if amount > user.balance:

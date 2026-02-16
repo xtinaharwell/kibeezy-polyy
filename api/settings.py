@@ -159,8 +159,20 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000').split(',')
-CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000').split(',')
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001').split(',')
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-user-phone-number',
+]
+CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001').split(',')
 
 # Security settings for production
 SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
@@ -175,4 +187,55 @@ CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_DOMAIN = None
 SESSION_COOKIE_AGE = 1209600  # 2 weeks in seconds
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+
+
+# ============================================================================
+# CELERY & REDIS CONFIGURATION
+# ============================================================================
+
+# Redis broker configuration
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://127.0.0.1:6379/0')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://127.0.0.1:6379/1')
+
+# Celery configuration
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+
+# Task concurrency settings
+CELERY_WORKER_CONCURRENCY = config('CELERY_WORKER_CONCURRENCY', default=4, cast=int)
+CELERY_WORKER_MAX_TASKS_PER_CHILD = config('CELERY_WORKER_MAX_TASKS_PER_CHILD', default=1000, cast=int)
+
+# Task retry and timeout settings
+CELERY_TASK_SOFT_TIME_LIMIT = config('CELERY_TASK_SOFT_TIME_LIMIT', default=600, cast=int)  # 10 min
+CELERY_TASK_TIME_LIMIT = config('CELERY_TASK_TIME_LIMIT', default=900, cast=int)  # 15 min
+CELERY_RESULT_EXPIRES = config('CELERY_RESULT_EXPIRES', default=3600, cast=int)  # 1 hour
+
+# Retry configuration
+CELERY_TASK_MAX_RETRIES = 5
+CELERY_TASK_DEFAULT_RETRY_DELAY = 60  # seconds
+
+
+# ============================================================================
+# M-PESA DARAJA CONFIGURATION
+# ============================================================================
+
+# Daraja API credentials
+MPESA_CONSUMER_KEY = config('MPESA_CONSUMER_KEY', default='')
+MPESA_CONSUMER_SECRET = config('MPESA_CONSUMER_SECRET', default='')
+MPESA_INITIATOR_NAME = config('MPESA_INITIATOR_NAME', default='testapi')
+MPESA_SECURITY_CREDENTIAL_ENCRYPTED = config('MPESA_SECURITY_CREDENTIAL_ENCRYPTED', default='')
+MPESA_PAYBILL = config('MPESA_PAYBILL', default='400000')  # Your Paybill/Shortcode
+
+# Daraja environment
+MPESA_PRODUCTION = config('MPESA_PRODUCTION', default=False, cast=bool)
+
+# B2C Callback URL
+MPESA_CALLBACK_URL = config('MPESA_CALLBACK_URL', default='https://kasoko.app/api/payments/b2c-callback/')
+
+# Payout settings
+PAYOUT_PLATFORM_FEE_PCT = config('PAYOUT_PLATFORM_FEE_PCT', default='5.00')
+PAYOUT_MIN_AMOUNT = config('PAYOUT_MIN_AMOUNT', default='10')  # KES
 

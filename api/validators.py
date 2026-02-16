@@ -31,7 +31,7 @@ def validate_phone_number(phone_number):
     
     for pattern in patterns:
         if re.match(pattern, phone):
-            return True
+            return phone
     
     raise ValidationError('Phone number must be in format 254xxxxxxxxx or 0xxxxxxxxx')
 
