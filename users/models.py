@@ -3,17 +3,20 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.core.validators import RegexValidator
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, phone_number, full_name, pin, **extra_fields):
+    def create_user(self, phone_number, full_name, pin=None, **extra_fields):
         if not phone_number:
             raise ValueError('The Phone Number must be set')
         user = self.model(phone_number=phone_number, full_name=full_name, **extra_fields)
-        user.set_password(pin) # Use PIN as password
+        if pin:
+            user.set_password(pin) # Use PIN as password
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, phone_number, full_name, pin, **extra_fields):
+    def create_superuser(self, phone_number, full_name, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
+        # Handle both 'password' (from Django command) and 'pin' (legacy)
+        pin = extra_fields.pop('pin', password)
         return self.create_user(phone_number, full_name, pin, **extra_fields)
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -22,6 +25,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     full_name = models.CharField(max_length=255)
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     kyc_verified = models.BooleanField(default=False)
+    kyc_verified_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)

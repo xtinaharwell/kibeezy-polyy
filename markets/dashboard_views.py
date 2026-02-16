@@ -1,18 +1,16 @@
 import json
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.contrib.auth.decorators import login_required
 from decimal import Decimal
 from .models import Market, Bet
 from payments.models import Transaction
 
-@csrf_exempt
 @require_http_methods(["GET"])
 def user_dashboard(request):
-    """Get user dashboard data: balance, bet history, statistics"""
+    # Check authentication
     if not request.user or not request.user.is_authenticated:
         return JsonResponse({'error': 'Authentication required'}, status=401)
+    """Get user dashboard data: balance, bet history, statistics"""
     
     try:
         user = request.user
@@ -54,12 +52,12 @@ def user_dashboard(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 def transaction_history(request):
-    """Get user's transaction history"""
+    # Check authentication
     if not request.user or not request.user.is_authenticated:
         return JsonResponse({'error': 'Authentication required'}, status=401)
+    """Get user's transaction history"""
     
     try:
         user = request.user
@@ -84,12 +82,12 @@ def transaction_history(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def initiate_withdrawal(request):
-    """Initiate M-Pesa withdrawal for user"""
+    # Check authentication
     if not request.user or not request.user.is_authenticated:
         return JsonResponse({'error': 'Authentication required'}, status=401)
+    """Initiate M-Pesa withdrawal for user"""
     
     try:
         data = json.loads(request.body)

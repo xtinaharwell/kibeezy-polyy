@@ -47,6 +47,15 @@ def seed():
             "volume": "KSh 210K",
             "end_date": "Dec 31, 2026",
             "image_url": "https://images.unsplash.com/photo-1621761191319-c6fb62004040?q=80&w=1000&auto=format&fit=crop"
+        },
+        {
+            "question": "Will Majembe win against Vunja Mbavu Destroyer?",
+            "category": "Sports",
+            "yes_probability": 58,
+            "volume": "KSh 500K",
+            "end_date": "Apr 4, 2026",
+            "description": "Celebrity boxing match between Majembe (known for technical finesse and sharp footwork) and Vunja Mbavu Destroyer (viral personality with aggressive energy and 'weka mawe' catchphrase). Event held in Nairobi, Kenya. Prize pool: KSh 1M with government backing. Both fighters are amateur boxers turned viral sensations with significant public following.",
+            "image_url": "https://images.unsplash.com/photo-1549988534-f81534c79311?q=80&w=1000&auto=format&fit=crop"
         }
     ]
 
@@ -58,6 +67,7 @@ def seed():
                 'yes_probability': m['yes_probability'],
                 'volume': m['volume'],
                 'end_date': m['end_date'],
+                'description': m.get('description', ''),
                 'image_url': m['image_url'],
                 'is_live': True
             }

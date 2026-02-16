@@ -1,0 +1,42 @@
+[Unit]
+Description=Kibeezy Poly Gunicorn Application Server
+After=network.target postgresql.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/kibeezy-polyy
+
+# Environment variables
+EnvironmentFile=/path/to/kibeezy-polyy/.env
+Environment="PATH=/path/to/kibeezy-polyy/venv/bin"
+
+# Start command
+ExecStart=/path/to/kibeezy-polyy/venv/bin/gunicorn \
+    --config gunicorn_config.py \
+    --name kibeezy_poly \
+    --workers 4 \
+    --bind 127.0.0.1:8001 \
+    --log-level info \
+    api.wsgi:application
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=600
+StartLimitBurst=3
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+# Resource limits
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
