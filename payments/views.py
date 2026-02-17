@@ -280,7 +280,34 @@ def _send_payout_notification(user, transaction):
 
 
 @ensure_csrf_cookie
-@require_http_methods(["POST"])
+@require_http_methods(["GET"])
+def get_transaction_status(request, transaction_id):
+    """Get the status of a transaction"""
+    try:
+        # Get authenticated user from session or header
+        user = get_authenticated_user(request)
+        if not user:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        try:
+            transaction = Transaction.objects.get(id=transaction_id, user=user)
+        except Transaction.DoesNotExist:
+            return JsonResponse({'error': 'Transaction not found'}, status=404)
+        
+        return JsonResponse({
+            'id': transaction.id,
+            'status': transaction.status,
+            'amount': float(transaction.amount),
+            'type': transaction.type,
+            'created_at': transaction.created_at.isoformat()
+        })
+    
+    except Exception as e:
+        logger.error(f"Transaction status error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
 def mpesa_callback(request):
     """Handle M-Pesa callback to update transaction and user balance"""
     if request.method == 'POST':
