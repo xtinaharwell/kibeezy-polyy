@@ -12,6 +12,32 @@ from users.models import CustomUser
 
 logger = logging.getLogger(__name__)
 
+@csrf_exempt
+@require_http_methods(["GET"])
+def test_mpesa_credentials(request):
+    """Test if M-Pesa credentials are valid"""
+    try:
+        client = get_mpesa_client()
+        token = client.get_access_token()
+        
+        if token:
+            return JsonResponse({
+                'status': 'success',
+                'message': 'M-Pesa credentials are valid',
+                'token': token[:20] + '...'  # Show first 20 chars only
+            })
+        else:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Failed to get access token'
+            }, status=400)
+    except Exception as e:
+        logger.error(f"Credential test error: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Credential validation failed: {str(e)}'
+        }, status=400)
+
 def get_authenticated_user(request):
     """Get authenticated user from session or X-User-Phone-Number header"""
     # Try session-based auth first

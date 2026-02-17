@@ -24,34 +24,73 @@ class MpesaIntegration:
     
     def get_access_token(self):
         """Get OAuth access token from M-Pesa"""
-        try:
-            auth = (self.consumer_key, self.consumer_secret)
-            endpoint = f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials"
-            
-            response = requests.get(endpoint, auth=auth, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            self.access_token = data.get('access_token')
-            self.token_expiry = datetime.now()
-            
-            logger.info("M-Pesa access token generated successfully")
-            return self.access_token
-            
-        except Exception as e:
-            logger.error(f"Failed to get M-Pesa access token: {str(e)}")
-            raise
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Attempt {attempt + 1}/{max_retries}: Getting M-Pesa access token...")
+                logger.info(f"Consumer Key: {self.consumer_key[:10]}...")
+                logger.info(f"Endpoint: {self.base_url}/oauth/v1/generate")
+                
+                auth = (self.consumer_key, self.consumer_secret)
+                endpoint = f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials"
+                
+                response = requests.get(endpoint, auth=auth, timeout=30)  # Increased timeout
+                
+                logger.info(f"Token response status: {response.status_code}")
+                logger.info(f"Token response text: {response.text}")
+                
+                response.raise_for_status()
+                
+                data = response.json()
+                self.access_token = data.get('access_token')
+                self.token_expiry = datetime.now()
+                
+                if not self.access_token:
+                    logger.error(f"No access_token in response: {data}")
+                    raise Exception(f"M-Pesa response missing access_token: {data}")
+                
+                logger.info(f"✅ M-Pesa access token generated successfully")
+                logger.info(f"Token (first 20 chars): {self.access_token[:20]}...")
+                return self.access_token
+                
+            except requests.exceptions.Timeout:
+                logger.warning(f"⏱️ Attempt {attempt + 1}: Timeout (30s). Retrying...")
+                if attempt == max_retries - 1:
+                    error_msg = "M-Pesa API timeout after 3 attempts (Safaricom API is slow or unreachable)"
+                    logger.error(f"❌ {error_msg}")
+                    raise Exception(error_msg)
+                continue
+                
+            except requests.exceptions.HTTPError as e:
+                error_msg = f"HTTP Error {e.response.status_code}: {e.response.text}"
+                logger.error(f"❌ Attempt {attempt + 1}: {error_msg}")
+                if attempt == max_retries - 1:
+                    raise Exception(error_msg)
+                continue
+                
+            except Exception as e:
+                logger.error(f"❌ Attempt {attempt + 1}: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise
+                continue
+        
+        raise Exception("Failed to get M-Pesa token after all retries")
     
     def get_valid_token(self):
         """Get valid access token, refresh if needed"""
         if not self.access_token or not self.token_expiry:
+            logger.info("No cached token, fetching new one...")
             return self.get_access_token()
         
-        # Token expires in 3600 seconds, refresh at 1 hour mark
+        # Token expires in 3600 seconds, refresh at 59 minute mark
         from datetime import timedelta
-        if datetime.now() - self.token_expiry > timedelta(minutes=59):
+        time_diff = datetime.now() - self.token_expiry
+        if time_diff > timedelta(minutes=59):
+            logger.info(f"Token expired ({time_diff.total_seconds()}s ago), fetching new one...")
             return self.get_access_token()
         
+        logger.info(f"Using cached token (generated {time_diff.total_seconds():.0f}s ago)")
         return self.access_token
     
     def initiate_stk_push(self, phone_number, amount, account_reference='Kibeezy'):
@@ -101,7 +140,9 @@ class MpesaIntegration:
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             password = self._generate_password(timestamp)
             
+            logger.info(f"Getting valid token for STK push...")
             token = self.get_valid_token()
+            logger.info(f"Using token (first 20 chars): {token[:20]}...")
             
             endpoint = f"{self.base_url}/mpesa/stkpush/v1/processrequest"
             
@@ -109,6 +150,8 @@ class MpesaIntegration:
                 'Content-Type': 'application/json',
                 'Authorization': f'Bearer {token}'
             }
+            
+            logger.info(f"Authorization header: Bearer {token[:20]}...")
             
             payload = {
                 'BusinessShortCode': self.shortcode,
@@ -124,13 +167,20 @@ class MpesaIntegration:
                 'TransactionDesc': f'Kibeezy deposit: {account_reference}'
             }
             
-            logger.info(f"Initiating STK push for {phone_number}, amount: {amount}")
+            logger.info(f"📤 Sending STK Push request to: {endpoint}")
+            logger.info(f"   Phone: {phone_number}, Amount: {amount}")
+            logger.info(f"   Token: {token[:30]}...")
+            logger.info(f"   Callback: {payload.get('CallBackURL')}")
             
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=10)
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=30)  # Increased timeout
+            
+            logger.info(f"📥 STK Push response status: {response.status_code}")
+            logger.info(f"   Response: {response.text}")
+            
             response.raise_for_status()
             
             data = response.json()
-            logger.info(f"STK Push initiated: {data}")
+            logger.info(f"✅ STK Push initiated successfully: {data}")
             
             return {
                 'CheckoutRequestID': data.get('CheckoutRequestID'),
@@ -140,6 +190,22 @@ class MpesaIntegration:
                 'MerchantRequestID': data.get('MerchantRequestID')
             }
             
+        except requests.exceptions.HTTPError as e:
+            # Log the response body for debugging
+            error_response = ""
+            try:
+                error_response = e.response.json()
+            except:
+                error_response = e.response.text
+            
+            logger.error(f"M-Pesa API HTTP Error {e.response.status_code}: {error_response}")
+            logger.error(f"Request payload was: {payload}")
+            
+            return {
+                'ResponseCode': '1',
+                'ResponseDescription': f'M-Pesa API Error: {error_response}',
+                'CustomerMessage': 'Payment service error. Please contact support.'
+            }
         except requests.exceptions.RequestException as e:
             logger.error(f"M-Pesa API request failed: {str(e)}")
             return {
@@ -177,7 +243,7 @@ class MpesaIntegration:
                 'CheckoutRequestID': checkout_request_id
             }
             
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=10)
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=30)  # Increased timeout
             response.raise_for_status()
             
             return response.json()
@@ -255,45 +321,7 @@ class MpesaIntegration:
         )
 
 
-# For development/testing without real M-Pesa
-class MockMpesaIntegration:
-    """Mock M-Pesa for development"""
-    
-    def initiate_stk_push(self, phone_number, amount, account_reference='Kibeezy'):
-        """Mock STK push"""
-        logger.info(f"[MOCK] STK Push for {phone_number}, amount: {amount}")
-        return {
-            'CheckoutRequestID': 'ws_CO_DMZ_123456789',
-            'ResponseCode': '0',
-            'ResponseDescription': 'Success. Request accepted for processing',
-            'CustomerMessage': 'Please enter your M-Pesa PIN (MOCK)',
-            'MerchantRequestID': 'test_merchant_123'
-        }
-    
-    def query_transaction_status(self, checkout_request_id):
-        """Mock status query"""
-        return {
-            'ResultCode': 0,
-            'ResultDesc': 'Success'
-        }
-    
-    def validate_callback(self, callback_data):
-        """Mock callback validation"""
-        return {
-            'status': 'COMPLETED',
-            'amount': Decimal('100'),
-            'receipt_number': 'LHD7FHFF6EF',
-            'transaction_date': '20260214120000',
-            'phone_number': '254712345678',
-            'checkout_request_id': callback_data.get('Body', {}).get('stkCallback', {}).get('CheckoutRequestID')
-        }
-
-
 def get_mpesa_client():
-    """Factory function to get M-Pesa client"""
-    if config('MPESA_DEBUG', default=True, cast=bool):
-        logger.info("Using Mock M-Pesa Client")
-        return MockMpesaIntegration()
-    
-    logger.info("Using Real M-Pesa Client")
+    """Factory function to get M-Pesa client - Always uses real M-Pesa Daraja API"""
+    logger.info("Using Real M-Pesa Daraja API")
     return MpesaIntegration()
