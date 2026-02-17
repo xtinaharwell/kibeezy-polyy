@@ -49,6 +49,8 @@ def user_dashboard(request):
         bets = Bet.objects.filter(user=user).select_related('market').order_by('-timestamp')
         
         bets_data = []
+        portfolio_value = Decimal('0.00')
+        
         for bet in bets:
             bets_data.append({
                 'id': bet.id,
@@ -61,6 +63,13 @@ def user_dashboard(request):
                 'payout': str(bet.payout) if bet.payout else None,
                 'timestamp': bet.timestamp.isoformat()
             })
+            
+            # Calculate portfolio value for open positions (PENDING bets)
+            if bet.result == 'PENDING':
+                # Portfolio value = bet amount * current market probability
+                current_probability = Decimal(bet.market.yes_probability) if bet.outcome == 'Yes' else Decimal(100 - bet.market.yes_probability)
+                current_value = bet.amount * (current_probability / Decimal('100'))
+                portfolio_value += current_value
         
         # Get user statistics
         stats = user.get_user_statistics()
@@ -76,7 +85,10 @@ def user_dashboard(request):
             },
             'statistics': stats,
             'bets': bets_data,
-            'total_bets': len(bets_data)
+            'total_bets': len(bets_data),
+            'portfolio': {
+                'total_value': str(portfolio_value.quantize(Decimal('0.01')))
+            }
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
