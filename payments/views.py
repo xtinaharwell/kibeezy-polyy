@@ -294,13 +294,19 @@ def get_transaction_status(request, transaction_id):
         except Transaction.DoesNotExist:
             return JsonResponse({'error': 'Transaction not found'}, status=404)
         
-        return JsonResponse({
+        response = {
             'id': transaction.id,
             'status': transaction.status,
             'amount': float(transaction.amount),
             'type': transaction.type,
             'created_at': transaction.created_at.isoformat()
-        })
+        }
+        
+        # Include error message if payment failed
+        if transaction.status == 'FAILED' and transaction.description:
+            response['error_message'] = transaction.description
+        
+        return JsonResponse(response)
     
     except Exception as e:
         logger.error(f"Transaction status error: {str(e)}")
@@ -313,6 +319,7 @@ def mpesa_callback(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            logger.info(f"M-Pesa callback received: {json.dumps(data)}")
             
             # Get M-Pesa client
             client = get_mpesa_client()
@@ -335,6 +342,7 @@ def mpesa_callback(request):
                 # Payment successful
                 transaction.status = 'COMPLETED'
                 transaction.receipt_number = result.get('receipt_number')
+                transaction.description = f"Deposit successful: KSh {transaction.amount}"
                 transaction.save()
                 
                 # Update user balance
@@ -342,17 +350,25 @@ def mpesa_callback(request):
                 user.balance += transaction.amount
                 user.save()
                 
-                logger.info(f"Payment successful for user {user.phone_number}, new balance: {user.balance}")
+                logger.info(f"✅ Payment successful for user {user.phone_number}, new balance: {user.balance}")
             else:
-                # Payment failed
-                transaction.status = 'FAILED'
-                transaction.save()
-                logger.warning(f"Payment failed for transaction {transaction.id}")
+                # Payment failed - extract M-Pesa error message
+                result_desc = result.get('result_desc', 'Payment failed. Please try again.')
                 
-            return JsonResponse({'message': 'Callback processed'})
+                transaction.status = 'FAILED'
+                transaction.description = f"M-Pesa error: {result_desc}"
+                transaction.save()
+                
+                logger.warning(f"❌ Payment failed for transaction {transaction.id}: {result_desc}")
+                
+            return JsonResponse({
+                'message': 'Callback processed',
+                'status': transaction.status,
+                'description': transaction.description
+            })
         
         except Exception as e:
-            logger.error(f"Callback processing error: {str(e)}")
+            logger.error(f"Callback processing error: {str(e)}", exc_info=True)
             return JsonResponse({'error': str(e)}, status=500)
 
     return JsonResponse({'error': 'Method not allowed'}, status=405)
