@@ -8,6 +8,7 @@ from .models import Market, Bet
 from payments.models import Transaction
 from api.validators import validate_amount, validate_bet_outcome, ValidationError
 from users.models import CustomUser
+from notifications.views import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,17 @@ def place_bet(request):
             status='COMPLETED',
             description=f'Bet placed on: {market.question}',
             related_bet=bet
+        )
+        
+        # Create bet placed notification
+        create_notification(
+            user=user,
+            type_choice='BET_PLACED',
+            title='Bet Placed',
+            message=f'Your prediction of {outcome} for KSh {amount} has been placed',
+            color_class='purple',
+            related_market_id=market.id,
+            related_bet_id=bet.id
         )
         
         # Simple logic to update probability (for demonstration)

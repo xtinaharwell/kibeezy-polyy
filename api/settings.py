@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'users',
     'markets',
     'payments',
+    'notifications',
 ]
 
 

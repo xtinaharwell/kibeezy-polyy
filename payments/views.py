@@ -9,6 +9,7 @@ from .mpesa_integration import get_mpesa_client
 from .models import Transaction
 from api.validators import validate_amount, ValidationError
 from users.models import CustomUser
+from notifications.views import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -350,6 +351,16 @@ def mpesa_callback(request):
                 user.balance += transaction.amount
                 user.save()
                 
+                # Create notification
+                create_notification(
+                    user=user,
+                    type_choice='DEPOSIT_CONFIRMED',
+                    title='Deposit Confirmed',
+                    message=f'Your deposit of KSh {transaction.amount} has been confirmed',
+                    color_class='green',
+                    related_transaction_id=transaction.id
+                )
+                
                 logger.info(f"✅ Payment successful for user {user.phone_number}, new balance: {user.balance}")
             else:
                 # Payment failed - extract M-Pesa error message
@@ -358,6 +369,17 @@ def mpesa_callback(request):
                 transaction.status = 'FAILED'
                 transaction.description = f"M-Pesa error: {result_desc}"
                 transaction.save()
+                
+                # Create notification
+                user = transaction.user
+                create_notification(
+                    user=user,
+                    type_choice='DEPOSIT_FAILED',
+                    title='Deposit Failed',
+                    message=result_desc,
+                    color_class='red',
+                    related_transaction_id=transaction.id
+                )
                 
                 logger.warning(f"❌ Payment failed for transaction {transaction.id}: {result_desc}")
                 

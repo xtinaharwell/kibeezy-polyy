@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 from django.middleware.csrf import get_token
 from .models import CustomUser
 from api.validators import validate_phone_number, validate_pin, validate_full_name, ValidationError
+from notifications.views import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,16 @@ def signup_view(request):
             pin=pin
         )
         logger.info(f"New user created: {phone_number}")
+        
+        # Create welcome notification
+        create_notification(
+            user=user,
+            type_choice='WELCOME',
+            title='Welcome to KASOKO!',
+            message='Start predicting markets to earn rewards',
+            color_class='blue'
+        )
+        
         return JsonResponse({
             'message': 'Account created successfully', 
             'user': {
