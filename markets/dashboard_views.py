@@ -91,6 +91,7 @@ def user_dashboard(request):
             }
         })
     except Exception as e:
+        logger.error(f"Dashboard error for user {user.phone_number if user else 'unknown'}: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 

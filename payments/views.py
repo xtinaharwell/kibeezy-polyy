@@ -129,6 +129,105 @@ def initiate_stk_push(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def initiate_withdrawal(request):
+    """Initiate B2C withdrawal/payout to user's M-Pesa account"""
+    # Get authenticated user from session or header
+    user = get_authenticated_user(request)
+    if not user:
+        logger.warning(f"Unauthorized withdrawal attempt")
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        data = json.loads(request.body)
+        amount = data.get('amount')
+        
+        # Validate amount
+        if not amount:
+            return JsonResponse({'error': 'Amount is required'}, status=400)
+        
+        try:
+            amount = validate_amount(amount, min_amount=Decimal('100'), max_amount=Decimal('150000'))
+        except ValidationError as e:
+            return JsonResponse({'error': e.message}, status=400)
+        
+        # Check user has sufficient balance
+        if user.balance < amount:
+            return JsonResponse({
+                'error': 'Insufficient balance',
+                'current_balance': float(user.balance),
+                'requested_amount': float(amount)
+            }, status=400)
+        
+        # Create pending withdrawal transaction
+        transaction = Transaction.objects.create(
+            user=user,
+            type='WITHDRAWAL',
+            amount=amount,
+            phone_number=user.phone_number,
+            status='PENDING',
+            description=f'M-Pesa withdrawal of KSh {amount}'
+        )
+        
+        # Get M-Pesa client and initiate B2C payment
+        client = get_mpesa_client()
+        
+        response = client.b2c_payment(
+            user.phone_number,
+            amount,
+            description=f'Kibeezy withdrawal'
+        )
+        
+        if response.get('ResponseCode') == '0':
+            # Update transaction with B2C details
+            transaction.merchant_request_id = response.get('ConversationID')
+            transaction.checkout_request_id = response.get('OriginatorConversationID')
+            transaction.save()
+            
+            # Deduct from user balance immediately
+            user.balance -= amount
+            user.save()
+            
+            # Create notification
+            create_notification(
+                user=user,
+                type_choice='WITHDRAWAL_INITIATED',
+                title='Withdrawal Initiated',
+                message=f'Your withdrawal of KSh {amount} has been initiated',
+                color_class='blue',
+                related_transaction_id=transaction.id
+            )
+            
+            logger.info(f"Withdrawal initiated for user {user.phone_number}, amount: {amount}, new balance: {user.balance}")
+            return JsonResponse({
+                'message': 'Withdrawal initiated successfully',
+                'transaction_id': transaction.id,
+                'conversation_id': response.get('ConversationID'),
+                'amount': float(amount),
+                'new_balance': float(user.balance),
+                'status': 'PENDING'
+            })
+        else:
+            # B2C initiation failed
+            transaction.status = 'FAILED'
+            transaction.description = response.get('ResponseDescription', 'B2C payment initiation failed')
+            transaction.save()
+            
+            return JsonResponse({
+                'error': response.get('ResponseDescription', 'Failed to process withdrawal'),
+                'customer_message': response.get('CustomerMessage', 'Withdrawal processing failed')
+            }, status=400)
+            
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except ValidationError as e:
+        return JsonResponse({'error': e.message}, status=400)
+    except Exception as e:
+        logger.error(f"Withdrawal error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def b2c_result_callback(request):
     """
     Handle B2C result callback from M-Pesa Daraja API

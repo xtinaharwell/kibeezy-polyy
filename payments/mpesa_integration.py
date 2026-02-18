@@ -221,6 +221,139 @@ class MpesaIntegration:
                 'CustomerMessage': 'An error occurred. Please try again.'
             }
     
+    def b2c_payment(self, phone_number, amount, description='Kibeezy Withdrawal'):
+        """
+        B2C payment for withdrawals/payouts
+        
+        Args:
+            phone_number: Receiving phone number (0xxxxxxxxx or 254xxxxxxxxx)
+            amount: Amount in KES
+            description: Transaction description
+            
+        Returns:
+            {
+                'ConversationID': '...',
+                'OriginatorConversationID': '...',
+                'ResponseCode': '0',
+                'ResponseDescription': '...'
+            }
+        """
+        try:
+            # Normalize phone number (remove +, add 254 if not present)
+            phone_number = str(phone_number).replace('+', '').replace(' ', '')
+            if phone_number.startswith('0'):
+                phone_number = '254' + phone_number[1:]
+            elif not phone_number.startswith('254'):
+                phone_number = '254' + phone_number
+            
+            # Validate phone number
+            if not self._validate_phone_number(phone_number):
+                return {
+                    'ResponseCode': '1',
+                    'ResponseDescription': 'Invalid phone number format',
+                    'CustomerMessage': 'Please enter a valid M-Pesa phone number'
+                }
+            
+            # Validate amount
+            amount = Decimal(str(amount))
+            if amount < 10 or amount > 150000:
+                return {
+                    'ResponseCode': '1',
+                    'ResponseDescription': 'Invalid amount',
+                    'CustomerMessage': 'Amount must be between 10 and 150,000 KES'
+                }
+            
+            token = self.get_valid_token()
+            
+            # B2C requires initiating user credentials (Business to Customer)
+            # Using shortcode as initiating user for now
+            initiating_identifier = self.shortcode  # Paybill number
+            identifier_type = '4'  # 4 = Paybill; 2 = Till number
+            
+            endpoint = f"{self.base_url}/mpesa/b2c/v1/paymentrequest"
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {token}'
+            }
+            
+            payload = {
+                'InitiatorName': 'Kibeezy',
+                'SecurityCredential': self._get_security_credential(),
+                'CommandID': 'BusinessPayment',  # For regular payouts
+                'Amount': int(amount),
+                'PartyA': initiating_identifier,
+                'PartyB': phone_number,
+                'Remarks': description,
+                'QueueTimeOutURL': self._get_b2c_callback_url(),
+                'ResultURL': self._get_b2c_callback_url(),
+                'Occasion': 'KIBEEZY_WITHDRAWAL'
+            }
+            
+            logger.info(f"📤 Sending B2C Payment request to: {endpoint}")
+            logger.info(f"   Recipient: {phone_number}, Amount: {amount}")
+            logger.info(f"   Initiator: {initiating_identifier}")
+            
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=30)
+            
+            logger.info(f"📥 B2C Payment response status: {response.status_code}")
+            logger.info(f"   Response: {response.text}")
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            logger.info(f"✅ B2C Payment initiated successfully: {data}")
+            
+            return {
+                'ConversationID': data.get('ConversationID'),
+                'OriginatorConversationID': data.get('OriginatorConversationID'),
+                'ResponseCode': data.get('ResponseCode'),
+                'ResponseDescription': data.get('ResponseDescription'),
+                'RequestId': data.get('RequestId')
+            }
+            
+        except requests.exceptions.HTTPError as e:
+            error_response = ""
+            try:
+                error_response = e.response.json()
+            except:
+                error_response = e.response.text
+            
+            logger.error(f"M-Pesa B2C API HTTP Error {e.response.status_code}: {error_response}")
+            
+            return {
+                'ResponseCode': '1',
+                'ResponseDescription': f'M-Pesa API Error: {error_response}',
+                'CustomerMessage': 'Withdrawal service error. Please contact support.'
+            }
+        except requests.exceptions.RequestException as e:
+            logger.error(f"M-Pesa B2C API request failed: {str(e)}")
+            return {
+                'ResponseCode': '1',
+                'ResponseDescription': 'Network error',
+                'CustomerMessage': 'Withdrawal service temporarily unavailable. Please try again.'
+            }
+        except Exception as e:
+            logger.error(f"B2C Payment error: {str(e)}")
+            return {
+                'ResponseCode': '1',
+                'ResponseDescription': str(e),
+                'CustomerMessage': 'An error occurred. Please try again.'
+            }
+    
+    def _get_security_credential(self):
+        """Get security credential for B2C - in real scenario this would be encrypted"""
+        # For sandbox/testing, return a placeholder
+        # In production, this would be an encrypted password
+        return config('MPESA_B2C_SECURITY_CREDENTIAL', default='test_credential')
+    
+    def _get_b2c_callback_url(self):
+        """Get B2C callback URL"""
+        return config(
+            'MPESA_B2C_CALLBACK_URL',
+            default=config('MPESA_CALLBACK_URL', default='https://yourdomain.com/api/payments/b2c-callback/')
+        )
+    
     def query_transaction_status(self, checkout_request_id):
         """Query the status of a transaction"""
         try:
@@ -243,7 +376,7 @@ class MpesaIntegration:
                 'CheckoutRequestID': checkout_request_id
             }
             
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=30)  # Increased timeout
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=30)
             response.raise_for_status()
             
             return response.json()
