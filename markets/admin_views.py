@@ -2,6 +2,7 @@ import json
 import logging
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from datetime import datetime
 from decimal import Decimal
 from .models import Market, Bet
@@ -16,15 +17,28 @@ from api.validators import (
 
 logger = logging.getLogger(__name__)
 
-def is_admin(user):
-    """Check if user is admin"""
-    return user and user.is_authenticated and user.is_staff
+def is_admin(user, request=None):
+    """Check if user is admin - checks both session auth and phone header"""
+    # First try session-based auth
+    if user and user.is_authenticated and user.is_staff:
+        return True
+    
+    # Fallback to phone number header if session auth fails
+    if request and request.headers.get('X-User-Phone-Number'):
+        phone_number = request.headers.get('X-User-Phone-Number')
+        try:
+            user_obj = CustomUser.objects.get(phone_number=phone_number)
+            return user_obj.is_staff and user_obj.is_superuser
+        except CustomUser.DoesNotExist:
+            return False
+    
+    return False
 
 
 @require_http_methods(["GET"])
 def admin_markets(request):
     """Get all markets for admin panel"""
-    if not is_admin(request.user):
+    if not is_admin(request.user, request):
         return JsonResponse({'error': 'Admin access required'}, status=403)
     
     try:
@@ -62,7 +76,7 @@ def admin_markets(request):
                 'no_bets': no_bets,
                 'total_bets': total_bets,
                 'total_wagered': str(total_wagered),
-                'end_date': market.end_date.isoformat(),
+                'end_date': market.end_date if isinstance(market.end_date, str) else market.end_date.isoformat(),
                 'created_at': market.created_at.isoformat(),
                 'resolved_at': market.resolved_at.isoformat() if market.resolved_at else None,
                 'created_by': market.created_by.phone_number if market.created_by else None
@@ -78,10 +92,11 @@ def admin_markets(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def resolve_market(request):
     """Resolve a market with a specific outcome"""
-    if not is_admin(request.user):
+    if not is_admin(request.user, request):
         return JsonResponse({'error': 'Admin access required'}, status=403)
     
     try:
@@ -209,10 +224,11 @@ def process_market_payouts(market, outcome):
         raise e
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def create_market(request):
     """Create a new market (admin only)"""
-    if not is_admin(request.user):
+    if not is_admin(request.user, request):
         return JsonResponse({'error': 'Admin access required'}, status=403)
     
     try:
@@ -234,14 +250,23 @@ def create_market(request):
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
         
+        # Get user from header for created_by field
+        phone_number = request.headers.get('X-User-Phone-Number')
+        created_by = None
+        if phone_number:
+            try:
+                created_by = CustomUser.objects.get(phone_number=phone_number)
+            except CustomUser.DoesNotExist:
+                pass
+        
         # Create market
         market = Market.objects.create(
             question=question,
             category=category,
             description=data.get('description', ''),
             image_url=data.get('image_url', ''),
-            end_date=end_date,
-            created_by=request.user
+            end_date=end_date.isoformat() if hasattr(end_date, 'isoformat') else str(end_date),
+            created_by=created_by
         )
         
         logger.info(f"Market {market.id} created by {request.user.id}: {question}")
@@ -253,7 +278,7 @@ def create_market(request):
                 'question': market.question,
                 'category': market.category,
                 'status': market.status,
-                'end_date': market.end_date.isoformat(),
+                'end_date': market.end_date if isinstance(market.end_date, str) else market.end_date.isoformat(),
                 'created_at': market.created_at.isoformat()
             }
         }, status=201)
