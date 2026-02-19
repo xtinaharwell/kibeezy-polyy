@@ -96,7 +96,8 @@ def login_view(request):
                     'phone_number': user.phone_number, 
                     'full_name': user.full_name,
                     'id': user.id,
-                    'kyc_verified': user.kyc_verified
+                    'kyc_verified': user.kyc_verified,
+                    'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 },
                 'csrf_token': csrf_token
             })
@@ -128,7 +129,8 @@ def check_auth(request):
                 'full_name': request.user.full_name,
                 'id': request.user.id,
                 'balance': str(request.user.balance),
-                'kyc_verified': request.user.kyc_verified
+                'kyc_verified': request.user.kyc_verified,
+                'date_joined': request.user.date_joined.isoformat() if request.user.date_joined else None,
             }
         })
     else:
@@ -146,3 +148,52 @@ def logout_view(request):
     logout(request)
     logger.info(f"User logged out")
     return JsonResponse({'message': 'Logged out successfully'})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_profile_view(request):
+    """Update user profile information"""
+    # Try session-based auth first
+    user = request.user if request.user and request.user.is_authenticated else None
+    
+    # Fall back to header-based auth
+    if not user:
+        phone_number = request.headers.get('X-User-Phone-Number')
+        if phone_number:
+            try:
+                user = CustomUser.objects.get(phone_number=phone_number)
+            except CustomUser.DoesNotExist:
+                user = None
+    
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        data = json.loads(request.body)
+        full_name = data.get('full_name')
+        
+        if full_name:
+            try:
+                full_name = validate_full_name(full_name)
+                user.full_name = full_name
+                user.save()
+            except ValidationError as e:
+                return JsonResponse({'error': e.message}, status=400)
+        
+        logger.info(f"Profile updated for user: {user.phone_number}")
+        return JsonResponse({
+            'message': 'Profile updated successfully',
+            'user': {
+                'phone_number': user.phone_number,
+                'full_name': user.full_name,
+                'balance': str(user.balance),
+                'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+            }
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Profile update error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+

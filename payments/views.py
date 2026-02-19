@@ -493,3 +493,33 @@ def mpesa_callback(request):
             return JsonResponse({'error': str(e)}, status=500)
 
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_user_transactions(request):
+    """Get all transactions for a user"""
+    user = get_authenticated_user(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        transactions = Transaction.objects.filter(user=user).order_by('-created_at')
+        
+        data = [
+            {
+                'id': txn.id,
+                'type': txn.type,
+                'amount': str(txn.amount),
+                'status': txn.status,
+                'description': txn.description or '',
+                'created_at': txn.created_at.isoformat(),
+                'reference': txn.reference or '',
+            }
+            for txn in transactions
+        ]
+        
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        logger.error(f"Error fetching transactions: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
