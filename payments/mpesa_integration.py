@@ -18,7 +18,7 @@ class MpesaIntegration:
         self.consumer_secret = config('MPESA_CONSUMER_SECRET', default='test_secret')
         self.shortcode = config('MPESA_SHORTCODE', default='174379')
         self.passkey = config('MPESA_PASSKEY', default='test_passkey')
-        self.base_url = 'https://sandbox.safaricom.co.ke'  # Use sandbox for testing
+        self.base_url = 'https://api.safaricom.co.ke'  # Production URL for real M-Pesa
         self.access_token = None
         self.token_expiry = None
     
