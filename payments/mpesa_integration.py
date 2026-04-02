@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class MpesaIntegration:
     """
-    Real M-Pesa integration for STK Push payments
+    M-Pesa integration for STK Push payments
     """
     
     def __init__(self):
@@ -18,7 +18,8 @@ class MpesaIntegration:
         self.consumer_secret = config('MPESA_CONSUMER_SECRET', default='test_secret')
         self.shortcode = config('MPESA_SHORTCODE', default='174379')
         self.passkey = config('MPESA_PASSKEY', default='test_passkey')
-        self.base_url = 'https://api.safaricom.co.ke'  # Production URL for real M-Pesa
+        self.production = config('MPESA_PRODUCTION', default=False, cast=bool)
+        self.base_url = 'https://api.safaricom.co.ke' if self.production else 'https://sandbox.safaricom.co.ke'
         self.access_token = None
         self.token_expiry = None
     
@@ -455,6 +456,8 @@ class MpesaIntegration:
 
 
 def get_mpesa_client():
-    """Factory function to get M-Pesa client - Always uses real M-Pesa Daraja API"""
-    logger.info("Using Real M-Pesa Daraja API")
-    return MpesaIntegration()
+    """Factory function to get M-Pesa client"""
+    integration = MpesaIntegration()
+    mode = 'production' if integration.production else 'sandbox'
+    logger.info(f"Using M-Pesa Daraja API in {mode} mode: {integration.base_url}")
+    return integration
