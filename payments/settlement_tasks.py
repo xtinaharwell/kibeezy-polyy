@@ -100,7 +100,7 @@ def settle_market(self, market_id):
                 profit = payout_amount - Decimal(str(bet.amount))
                 
                 # Create transaction record
-                external_ref = f"KASOKO-{market.id}-{bet.id}-{timezone.now().timestamp()}"
+                external_ref = f"CACHE-{market.id}-{bet.id}-{timezone.now().timestamp()}"
                 
                 tx = Transaction.objects.create(
                     user=bet.user,
@@ -265,7 +265,7 @@ def _create_refund_transaction(bet):
     Create a refund transaction when no winners in a market
     (Internal helper)
     """
-    external_ref = f"KASOKO-REFUND-{bet.id}-{timezone.now().timestamp()}"
+    external_ref = f"CACHE-REFUND-{bet.id}-{timezone.now().timestamp()}"
     tx = Transaction.objects.create(
         user=bet.user,
         type='PAYOUT',

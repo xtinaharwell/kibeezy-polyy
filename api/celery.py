@@ -1,5 +1,5 @@
 """
-Celery configuration for KASOKO
+Celery configuration for CACHE
 Handles async tasks like market settlement and M-Pesa B2C payouts
 """
 import os

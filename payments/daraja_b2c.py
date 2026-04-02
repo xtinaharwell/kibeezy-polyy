@@ -1,5 +1,5 @@
 """
-M-Pesa Daraja B2C integration for KASOKO payouts
+M-Pesa Daraja B2C integration for CACHE payouts
 Handles OAuth token generation, B2C API calls, and secure credential management
 """
 import requests
@@ -32,7 +32,7 @@ CONSUMER_SECRET = getattr(settings, 'MPESA_CONSUMER_SECRET', '')
 INITIATOR_NAME = getattr(settings, 'MPESA_INITIATOR_NAME', 'testapi')
 SECURITY_CREDENTIAL_ENCRYPTED = getattr(settings, 'MPESA_SECURITY_CREDENTIAL_ENCRYPTED', '')
 PAYBILL = getattr(settings, 'MPESA_PAYBILL', '600000')  # Your Paybill/shortcode
-CALLBACK_URL = getattr(settings, 'MPESA_CALLBACK_URL', 'https://kasoko.app/api/payments/b2c-callback/')
+CALLBACK_URL = getattr(settings, 'MPESA_CALLBACK_URL', 'https://CACHE.app/api/payments/b2c-callback/')
 
 
 def get_oauth_token():
@@ -97,10 +97,10 @@ def call_b2c(transaction, phone_number, amount):
             "Amount": str(int(amount)),  # Amount MUST be integer in pesewas/smallest units
             "PartyA": PAYBILL,
             "PartyB": phone,
-            "Remarks": f"KASOKO Market Payout - Ref: {transaction.external_ref}",
+            "Remarks": f"CACHE Market Payout - Ref: {transaction.external_ref}",
             "QueueTimeOutURL": CALLBACK_URL,
             "ResultURL": CALLBACK_URL,
-            "Occasion": "KASOKO_PAYOUT"
+            "Occasion": "CACHE_PAYOUT"
         }
         
         headers = {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-KASOKO System Verification Script
+CACHE System Verification Script
 Checks if all required files, settings, and dependencies are in place
 """
 
@@ -199,7 +199,7 @@ def check_urls():
 def main():
     """Run all checks"""
     print("=" * 60)
-    print("KASOKO SYSTEM VERIFICATION")
+    print("CACHE SYSTEM VERIFICATION")
     print("=" * 60)
     
     checks = [

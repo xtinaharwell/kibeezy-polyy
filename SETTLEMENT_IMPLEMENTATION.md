@@ -1,8 +1,8 @@
 
-# KASOKO Market Settlement & Payout System - Implementation Guide
+# CACHE Market Settlement & Payout System - Implementation Guide
 
 ## Overview
-This guide covers the complete implementation of the pari-mutuel market settlement and M-Pesa B2C payout system for KASOKO prediction markets.
+This guide covers the complete implementation of the pari-mutuel market settlement and M-Pesa B2C payout system for CACHE prediction markets.
 
 ---
 
@@ -96,7 +96,7 @@ MPESA_CONSUMER_SECRET=your_consumer_secret
 MPESA_INITIATOR_NAME=testapi
 MPESA_SECURITY_CREDENTIAL_ENCRYPTED=your_encrypted_credential  # See section 2.5
 MPESA_PAYBILL=600000
-MPESA_CALLBACK_URL=https://kasoko.app/api/payments/b2c-callback/
+MPESA_CALLBACK_URL=https://CACHE.app/api/payments/b2c-callback/
 
 # Payouts
 PAYOUT_PLATFORM_FEE_PCT=5.00
@@ -298,7 +298,7 @@ curl -X POST http://127.0.0.1:8000/api/payments/b2c-callback/ \
       "ResultDesc": "The service request has been processed successfully.",
       "OriginatorConversationID": "...",
       "ConversationID": "...",
-      "ExternalReference": "KASOKO-1-1-1613398249.5",
+      "ExternalReference": "CACHE-1-1-1613398249.5",
       "ResponseDescription": "success"
     }
   }'
@@ -430,4 +430,4 @@ curl -X POST http://127.0.0.1:8000/api/payments/admin/retry-failed-payouts/ \
 ---
 
 **Last Updated**: Feb 16, 2026  
-**KASOKO Version**: 1.0.0-settlement
+**CACHE Version**: 1.0.0-settlement

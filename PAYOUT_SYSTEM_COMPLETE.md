@@ -1,8 +1,8 @@
-# KASOKO Payout System - Implementation Complete ✓
+# CACHE Payout System - Implementation Complete ✓
 
 ## Executive Summary
 
-The complete **M-Pesa B2C payout system** for KASOKO prediction markets has been **fully implemented**. All backend code is in place and ready for deployment.
+The complete **M-Pesa B2C payout system** for CACHE prediction markets has been **fully implemented**. All backend code is in place and ready for deployment.
 
 **Status**: ✅ READY FOR TESTING & INTEGRATION
 
@@ -118,7 +118,7 @@ Callback Payload:
     "ResultDesc": "The service request has been processed successfully.",
     "OriginatorConversationID": "...",
     "ConversationID": "...",
-    "ExternalReference": "KASOKO-1-1-...",
+    "ExternalReference": "CACHE-1-1-...",
     "ResponseDescription": "success"
   }
 }
@@ -197,7 +197,7 @@ MPESA_CONSUMER_SECRET = os.getenv('MPESA_CONSUMER_SECRET', '')
 MPESA_INITIATOR_NAME = os.getenv('MPESA_INITIATOR_NAME', 'testapi')
 MPESA_SECURITY_CREDENTIAL_ENCRYPTED = os.getenv('MPESA_SECURITY_CREDENTIAL_ENCRYPTED', '')
 MPESA_PAYBILL = os.getenv('MPESA_PAYBILL', '400000')
-MPESA_CALLBACK_URL = os.getenv('MPESA_CALLBACK_URL', 'https://kasoko.app/api/payments/b2c-callback/')
+MPESA_CALLBACK_URL = os.getenv('MPESA_CALLBACK_URL', 'https://CACHE.app/api/payments/b2c-callback/')
 ```
 
 **Payout Settings**:

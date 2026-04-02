@@ -235,7 +235,7 @@ MPESA_PAYBILL = config('MPESA_PAYBILL', default='400000')  # Your Paybill/Shortc
 MPESA_PRODUCTION = config('MPESA_PRODUCTION', default=False, cast=bool)
 
 # B2C Callback URL
-MPESA_CALLBACK_URL = config('MPESA_CALLBACK_URL', default='https://kasoko.app/api/payments/b2c-callback/')
+MPESA_CALLBACK_URL = config('MPESA_CALLBACK_URL', default='https://CACHE.app/api/payments/b2c-callback/')
 
 # Payout settings
 PAYOUT_PLATFORM_FEE_PCT = config('PAYOUT_PLATFORM_FEE_PCT', default='5.00')

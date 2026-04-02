@@ -1,4 +1,4 @@
-# KASOKO Development Task Checklist
+# CACHE Development Task Checklist
 
 ## Phase 1: Infrastructure Setup (IMMEDIATE - DO THIS FIRST)
 

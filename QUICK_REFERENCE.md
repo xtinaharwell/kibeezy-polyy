@@ -1,4 +1,4 @@
-# KASOKO Quick Reference Guide
+# CACHE Quick Reference Guide
 
 ## ⚡ Essential Commands
 
@@ -85,7 +85,7 @@ MPESA_PRODUCTION=False  # True for production
 
 # M-Pesa Security
 MPESA_SECURITY_CREDENTIAL_ENCRYPTED=base64_encrypted_password
-MPESA_CALLBACK_URL=https://kasoko.app/api/payments/b2c-callback/
+MPESA_CALLBACK_URL=https://CACHE.app/api/payments/b2c-callback/
 
 # Payout Settings
 PAYOUT_PLATFORM_FEE_PCT=5.00  # 5% platform fee

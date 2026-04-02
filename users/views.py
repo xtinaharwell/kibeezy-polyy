@@ -45,7 +45,7 @@ def signup_view(request):
         create_notification(
             user=user,
             type_choice='WELCOME',
-            title='Welcome to KASOKO!',
+            title='Welcome to CACHE!',
             message='Start predicting markets to earn rewards',
             color_class='blue'
         )
