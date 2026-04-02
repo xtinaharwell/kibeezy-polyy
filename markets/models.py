@@ -50,6 +50,8 @@ class Bet(models.Model):
         ('LIMIT', 'Limit'),
     ]
     order_type = models.CharField(max_length=10, choices=ORDER_TYPE_CHOICES, default='MARKET')
+    limit_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    quantity = models.PositiveIntegerField(default=1)
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='PENDING')
     payout = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)

@@ -112,6 +112,24 @@ def place_bet(request):
         if order_type not in ['MARKET', 'LIMIT']:
             order_type = 'MARKET'
 
+        try:
+            quantity = int(data.get('quantity', 1))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Quantity must be an integer'}, status=400)
+
+        if quantity < 1:
+            return JsonResponse({'error': 'Quantity must be at least 1'}, status=400)
+
+        limit_price = None
+        if order_type == 'LIMIT':
+            limit_price_raw = data.get('limit_price')
+            if limit_price_raw in [None, '']:
+                return JsonResponse({'error': 'Limit price is required for limit orders'}, status=400)
+            try:
+                limit_price = validate_amount(limit_price_raw, min_amount=Decimal('0.01'), max_amount=Decimal('1000000'))
+            except ValidationError as e:
+                return JsonResponse({'error': e.message}, status=400)
+
         # Create the bet
         bet = Bet.objects.create(
             user=user,
@@ -119,7 +137,9 @@ def place_bet(request):
             outcome=outcome,
             amount=amount,
             entry_probability=market.yes_probability,
-            order_type=order_type
+            order_type=order_type,
+            limit_price=limit_price,
+            quantity=quantity,
         )
         
         # Create transaction record
