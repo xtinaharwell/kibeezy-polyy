@@ -3,7 +3,7 @@ import logging
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from .models import Market, Bet
 from payments.models import Transaction
@@ -235,8 +235,8 @@ def create_market(request):
         data = json.loads(request.body)
         
         # Validate required fields
-        required_fields = ['question', 'category', 'end_date']
-        missing_fields = [field for field in required_fields if field not in data]
+        required_fields = ['question', 'category']
+        missing_fields = [field for field in required_fields if field not in data or not str(data.get(field)).strip()]
         if missing_fields:
             return JsonResponse({
                 'error': f'Missing required fields: {", ".join(missing_fields)}'
@@ -246,9 +246,21 @@ def create_market(request):
         try:
             question = validate_market_question(data.get('question'))
             category = validate_market_category(data.get('category'))
-            end_date = validate_date_string(data.get('end_date'))
+            end_date_value = data.get('end_date')
+            if end_date_value:
+                end_date = validate_date_string(end_date_value)
+            else:
+                end_date = datetime.now() + timedelta(days=7)
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
+        
+        yes_probability = 50
+        if data.get('yes_probability') is not None:
+            try:
+                yes_probability = int(data.get('yes_probability'))
+                yes_probability = max(1, min(99, yes_probability))
+            except (ValueError, TypeError):
+                yes_probability = 50
         
         # Get user from header for created_by field
         phone_number = request.headers.get('X-User-Phone-Number')
@@ -289,4 +301,26 @@ def create_market(request):
         return JsonResponse({'error': e.message}, status=400)
     except Exception as e:
         logger.error(f"Error creating market: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_market(request, market_id):
+    """Delete a market completely from the system."""
+    if not is_admin(request.user, request):
+        return JsonResponse({'error': 'Admin access required'}, status=403)
+
+    try:
+        try:
+            market = Market.objects.get(id=market_id)
+        except Market.DoesNotExist:
+            return JsonResponse({'error': 'Market not found'}, status=404)
+
+        market.delete()
+
+        logger.info(f"Market {market_id} deleted by admin {request.user.id}")
+        return JsonResponse({'message': 'Market deleted successfully'}, status=200)
+    except Exception as e:
+        logger.error(f"Error deleting market {market_id}: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)

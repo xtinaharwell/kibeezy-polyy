@@ -1,6 +1,8 @@
 import json
 import logging
 from django.contrib.auth import authenticate, login, logout
+from django.db.models import Sum, Q, Value, DecimalField
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -195,5 +197,36 @@ def update_profile_view(request):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
         logger.error(f"Profile update error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def leaderboard_view(request):
+    """Return the top payout winners by total completed payout amount."""
+    try:
+        top_winners = (
+            CustomUser.objects
+                .annotate(total_winnings=Coalesce(
+                    Sum('transactions__amount', filter=Q(transactions__type='PAYOUT', transactions__status='COMPLETED')),
+                    Value(0, output_field=DecimalField())
+                ))
+                .filter(total_winnings__gt=0)
+                .order_by('-total_winnings')[:10]
+        )
+
+        leaderboard_data = [
+            {
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone_number': user.phone_number,
+                'balance': str(user.balance),
+                'total_winnings': str(user.total_winnings),
+            }
+            for user in top_winners
+        ]
+
+        return JsonResponse({'leaderboard': leaderboard_data})
+    except Exception as e:
+        logger.error(f"Leaderboard error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 

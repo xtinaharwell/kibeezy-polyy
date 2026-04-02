@@ -45,6 +45,11 @@ class Bet(models.Model):
     outcome = models.CharField(max_length=10, choices=[('Yes', 'Yes'), ('No', 'No')])
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     entry_probability = models.IntegerField(default=50)
+    ORDER_TYPE_CHOICES = [
+        ('MARKET', 'Market'),
+        ('LIMIT', 'Limit'),
+    ]
+    order_type = models.CharField(max_length=10, choices=ORDER_TYPE_CHOICES, default='MARKET')
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='PENDING')
     payout = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -52,5 +57,15 @@ class Bet(models.Model):
     def __str__(self):
         return f"{self.user.phone_number} - {self.market.question} - {self.outcome}"
 
+
+class ChatMessage(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_messages')
+    market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name='chat_messages')
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='replies')
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
     def __str__(self):
-        return f"{self.user.phone_number} - {self.market.question} - {self.outcome}"
+        if self.parent:
+            return f"{self.user.phone_number} replied to {self.parent.user.phone_number} on {self.market.id}: {self.message[:40]}"
+        return f"{self.user.phone_number} on {self.market.id}: {self.message[:40]}"
