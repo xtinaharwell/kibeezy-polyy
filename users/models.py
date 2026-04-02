@@ -3,21 +3,19 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.core.validators import RegexValidator
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, phone_number, full_name, pin=None, **extra_fields):
+    def create_user(self, phone_number, full_name, password=None, **extra_fields):
         if not phone_number:
             raise ValueError('The Phone Number must be set')
         user = self.model(phone_number=phone_number, full_name=full_name, **extra_fields)
-        if pin:
-            user.set_password(pin) # Use PIN as password
+        if password:
+            user.set_password(password)
         user.save(using=self._db)
         return user
 
     def create_superuser(self, phone_number, full_name, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
-        # Handle both 'password' (from Django command) and 'pin' (legacy)
-        pin = extra_fields.pop('pin', password)
-        return self.create_user(phone_number, full_name, pin, **extra_fields)
+        return self.create_user(phone_number, full_name, password, **extra_fields)
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_regex = RegexValidator(regex=r'^\+?1?\d{9,15}$', message="Phone number must be entered in the format: '0718693484'.")

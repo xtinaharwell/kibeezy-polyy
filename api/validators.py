@@ -125,17 +125,17 @@ def validate_full_name(full_name):
     return full_name
 
 
-def validate_pin(pin):
-    """Validate user PIN"""
-    pin = str(pin)
+def validate_password(password):
+    """Validate user password"""
+    password = str(password)
     
-    if len(pin) != 4:
-        raise ValidationError('PIN must be exactly 4 digits')
+    if len(password) < 6:
+        raise ValidationError('Password must be at least 6 characters')
     
-    if not pin.isdigit():
-        raise ValidationError('PIN must contain only digits')
+    if len(password) > 128:
+        raise ValidationError('Password cannot exceed 128 characters')
     
-    return pin
+    return password
 
 
 def validate_string(value, min_length=1, max_length=255, field_name='Value'):

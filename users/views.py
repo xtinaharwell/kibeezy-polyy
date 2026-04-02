@@ -6,7 +6,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.middleware.csrf import get_token
 from .models import CustomUser
-from api.validators import validate_phone_number, validate_pin, validate_full_name, ValidationError
+from api.validators import validate_phone_number, validate_password, validate_full_name, ValidationError
 from notifications.views import create_notification
 
 logger = logging.getLogger(__name__)
@@ -18,16 +18,16 @@ def signup_view(request):
         data = json.loads(request.body)
         full_name = data.get('full_name')
         phone_number = data.get('phone_number')
-        pin = data.get('pin')
+        password = data.get('password')
 
-        if not all([full_name, phone_number, pin]):
-            return JsonResponse({'error': 'Missing required fields: full_name, phone_number, pin'}, status=400)
+        if not all([full_name, phone_number, password]):
+            return JsonResponse({'error': 'Missing required fields: full_name, phone_number, password'}, status=400)
         
         # Validate inputs
         try:
             full_name = validate_full_name(full_name)
             phone_number = validate_phone_number(phone_number)
-            pin = validate_pin(pin)
+            password = validate_password(password)
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
 
@@ -37,7 +37,7 @@ def signup_view(request):
         user = CustomUser.objects.create_user(
             phone_number=phone_number,
             full_name=full_name,
-            pin=pin
+            password=password
         )
         logger.info(f"New user created: {phone_number}")
         
@@ -74,13 +74,13 @@ def login_view(request):
     try:
         data = json.loads(request.body)
         phone_number = data.get('phone_number')
-        pin = data.get('pin')
+        password = data.get('password')
 
-        if not all([phone_number, pin]):
-            return JsonResponse({'error': 'Missing credentials: phone_number, pin'}, status=400)
+        if not all([phone_number, password]):
+            return JsonResponse({'error': 'Missing credentials: phone_number, password'}, status=400)
 
         logger.info(f"Login attempt for phone: {phone_number}")
-        user = authenticate(request, phone_number=phone_number, password=pin)
+        user = authenticate(request, phone_number=phone_number, password=password)
         if user is not None:
             logger.info(f"User authenticated: {user.phone_number}, User ID: {user.id}")
             login(request, user)  # This sets the session cookie
@@ -106,7 +106,7 @@ def login_view(request):
             return response
         else:
             logger.warning(f"Failed authentication for phone: {phone_number}")
-            return JsonResponse({'error': 'Invalid phone number or PIN'}, status=401)
+            return JsonResponse({'error': 'Invalid phone number or password'}, status=401)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
