@@ -45,7 +45,7 @@ def user_dashboard(request):
     
     try:
         
-        # Get user bets with market info
+        # Get user bets with market info - only BUY actions for portfolio
         bets = Bet.objects.filter(user=user).select_related('market').order_by('-timestamp')
         
         bets_data = []
@@ -64,8 +64,8 @@ def user_dashboard(request):
                 'timestamp': bet.timestamp.isoformat()
             })
             
-            # Calculate portfolio value for open positions (PENDING bets)
-            if bet.result == 'PENDING':
+            # Calculate portfolio value for open BUY positions (PENDING bets, exclude SELL)
+            if bet.result == 'PENDING' and bet.action == 'BUY':
                 # Portfolio value = bet amount * current market probability
                 current_probability = Decimal(bet.market.yes_probability) if bet.outcome == 'Yes' else Decimal(100 - bet.market.yes_probability)
                 current_value = bet.amount * (current_probability / Decimal('100'))

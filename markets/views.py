@@ -100,12 +100,22 @@ def place_bet(request):
         if market.status != 'OPEN':
             return JsonResponse({'error': f'Market is {market.status.lower()}'}, status=400)
         
-        # Check if user has sufficient balance
-        if amount > user.balance:
-            return JsonResponse({'error': f'Insufficient balance. Available: KSH {user.balance}'}, status=400)
+        # Get action type (buy or sell)
+        action = data.get('action', 'buy').lower()
+        if action not in ['buy', 'sell']:
+            return JsonResponse({'error': 'Invalid action. Must be buy or sell'}, status=400)
         
-        # Deduct from balance
-        user.balance -= amount
+        # Handle buy (deduct from balance) vs sell (add to balance)
+        if action == 'buy':
+            # Check if user has sufficient balance
+            if amount > user.balance:
+                return JsonResponse({'error': f'Insufficient balance. Available: KSH {user.balance}'}, status=400)
+            # Deduct from balance
+            user.balance -= amount
+        else:  # sell
+            # Add to balance (proceeds from selling)
+            user.balance += amount
+        
         user.save()
         
         order_type = data.get('order_type', 'MARKET')
@@ -140,26 +150,32 @@ def place_bet(request):
             order_type=order_type,
             limit_price=limit_price,
             quantity=quantity,
+            action=action.upper(),
         )
         
         # Create transaction record
+        transaction_type = 'BET_SELL' if action == 'sell' else 'BET'
+        description = f'Position closed on: {market.question}' if action == 'sell' else f'Bet placed on: {market.question}'
         Transaction.objects.create(
             user=user,
-            type='BET',
+            type=transaction_type,
             amount=amount,
             phone_number=user.phone_number,
             status='COMPLETED',
-            description=f'Bet placed on: {market.question}',
+            description=description,
             related_bet=bet
         )
         
-        # Create bet placed notification
+        # Create notification
+        action_text = 'sold' if action == 'sell' else 'placed'
+        notification_type = 'BET_SOLD' if action == 'sell' else 'BET_PLACED'
+        notification_title = 'Position Closed' if action == 'sell' else 'Bet Placed'
         create_notification(
             user=user,
-            type_choice='BET_PLACED',
-            title='Bet Placed',
-            message=f'Your prediction of {outcome} for KSh {amount} has been placed',
-            color_class='purple',
+            type_choice=notification_type,
+            title=notification_title,
+            message=f'Your prediction of {outcome} for KSh {amount} has been {action_text}',
+            color_class='green' if action == 'sell' else 'purple',
             related_market_id=market.id,
             related_bet_id=bet.id
         )
@@ -174,10 +190,12 @@ def place_bet(request):
         market.volume = format_volume_value(current_volume + int(amount))
         market.save()
         
-        logger.info(f"Bet placed by {user.phone_number}: {outcome} {amount} on market {market_id}")
+        action_verb = 'sold' if action == 'sell' else 'placed'
+        logger.info(f"Bet {action_verb} by {user.phone_number}: {outcome} {amount} on market {market_id}")
 
+        response_msg = 'Position closed successfully' if action == 'sell' else 'Bet placed successfully'
         return JsonResponse({
-            'message': 'Bet placed successfully', 
+            'message': response_msg, 
             'bet_id': bet.id,
             'new_balance': str(user.balance)
         })
@@ -262,4 +280,112 @@ def market_chat(request, market_id):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
         logger.error(f"Market chat error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def market_details(request, market_id):
+    """Return market public details for comments, top holders, positions, and activity."""
+    try:
+        try:
+            market = Market.objects.get(id=market_id)
+        except Market.DoesNotExist:
+            return JsonResponse({'error': 'Market not found'}, status=404)
+
+        comments = ChatMessage.objects.filter(market=market).select_related('user', 'parent__user').order_by('created_at')
+        bets = Bet.objects.filter(market=market).select_related('user').order_by('-timestamp')
+
+        # Build comment list
+        comment_data = [
+            {
+                'id': msg.id,
+                'user_id': msg.user.id,
+                'user_name': msg.user.full_name,
+                'phone_number': msg.user.phone_number,
+                'message': msg.message,
+                'created_at': msg.created_at.isoformat(),
+                'parent_id': msg.parent_id,
+                'parent_user_name': msg.parent.user.full_name if msg.parent else None,
+            }
+            for msg in comments
+        ]
+
+        # Public positions list
+        positions = [
+            {
+                'id': bet.id,
+                'user_id': bet.user.id,
+                'user_name': bet.user.full_name,
+                'outcome': bet.outcome,
+                'order_type': bet.order_type,
+                'limit_price': str(bet.limit_price) if bet.limit_price is not None else None,
+                'quantity': bet.quantity,
+                'amount': str(bet.amount),
+                'entry_probability': bet.entry_probability,
+                'result': bet.result,
+                'timestamp': bet.timestamp.isoformat(),
+            }
+            for bet in bets
+        ]
+
+        # Group top holders by user and outcome
+        holder_map = {}
+        for bet in bets:
+            key = (bet.user.id, bet.outcome)
+            if key not in holder_map:
+                holder_map[key] = {
+                    'user_id': bet.user.id,
+                    'user_name': bet.user.full_name,
+                    'outcome': bet.outcome,
+                    'shares': 0,
+                    'average_price': Decimal('0.00'),
+                    'amount_total': Decimal('0.00'),
+                }
+            holder_map[key]['shares'] += bet.quantity or 1
+            holder_map[key]['amount_total'] += bet.amount
+
+        for holder in holder_map.values():
+            shares = Decimal(holder['shares']) if holder['shares'] else Decimal('1')
+            holder['average_price'] = str((holder['amount_total'] / shares).quantize(Decimal('0.01')))
+            holder['shares'] = int(holder['shares'])
+            holder.pop('amount_total', None)
+
+        yes_holders = sorted(
+            [holder for holder in holder_map.values() if holder['outcome'] == 'Yes'],
+            key=lambda h: h['shares'],
+            reverse=True
+        )
+        no_holders = sorted(
+            [holder for holder in holder_map.values() if holder['outcome'] == 'No'],
+            key=lambda h: h['shares'],
+            reverse=True
+        )
+
+        # Build activity stream
+        activity = [
+            {
+                'id': bet.id,
+                'user_id': bet.user.id,
+                'user_name': bet.user.full_name,
+                'action': f"bought {bet.quantity or 1} {bet.outcome}",
+                'amount': str(bet.amount),
+                'limit_price': str(bet.limit_price) if bet.limit_price is not None else None,
+                'order_type': bet.order_type,
+                'timestamp': bet.timestamp.isoformat(),
+            }
+            for bet in bets
+        ]
+
+        return JsonResponse({
+            'market_id': market.id,
+            'comments': comment_data,
+            'positions': positions,
+            'top_holders': {
+                'yes': yes_holders,
+                'no': no_holders,
+            },
+            'activity': activity,
+        })
+    except Exception as e:
+        logger.error(f"Market details error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)

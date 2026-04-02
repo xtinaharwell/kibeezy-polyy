@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import list_markets, place_bet, market_chat
+from .views import list_markets, place_bet, market_chat, market_details
 from .dashboard_views import user_dashboard, transaction_history, initiate_withdrawal
 from .admin_views import admin_markets, resolve_market, create_market, delete_market
 
@@ -7,6 +7,7 @@ urlpatterns = [
     path('', list_markets, name='list_markets'),
     path('bet/', place_bet, name='place_bet'),
     path('<int:market_id>/chat/', market_chat, name='market_chat'),
+    path('<int:market_id>/details/', market_details, name='market_details'),
     
     # Dashboard endpoints
     path('dashboard/', user_dashboard, name='user_dashboard'),

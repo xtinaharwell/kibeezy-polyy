@@ -40,6 +40,11 @@ class Bet(models.Model):
         ('LOST', 'Lost'),
     ]
     
+    ACTION_CHOICES = [
+        ('BUY', 'Buy'),
+        ('SELL', 'Sell'),
+    ]
+    
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bets')
     market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name='bets')
     outcome = models.CharField(max_length=10, choices=[('Yes', 'Yes'), ('No', 'No')])
@@ -54,6 +59,7 @@ class Bet(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='PENDING')
     payout = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES, default='BUY')
     timestamp = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
