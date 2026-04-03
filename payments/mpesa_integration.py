@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import uuid
 from decimal import Decimal
 from datetime import datetime
 import logging
@@ -266,44 +267,48 @@ class MpesaIntegration:
             
             token = self.get_valid_token()
             
-            # B2C requires initiating user credentials (Business to Customer)
-            # Using shortcode as initiating user for now
-            initiating_identifier = self.shortcode  # Paybill number
-            identifier_type = '4'  # 4 = Paybill; 2 = Till number
-            
-            endpoint = f"{self.base_url}/mpesa/b2c/v1/paymentrequest"
+            # B2C v3 endpoint per official Safaricom spec
+            endpoint = f"{self.base_url}/mpesa/b2c/v3/paymentrequest"
             
             headers = {
                 'Content-Type': 'application/json',
                 'Authorization': f'Bearer {token}'
             }
             
+            # Generate unique OriginatorConversationID (REQUIRED per Safaricom spec for idempotency)
+            originator_conv_id = f"{self.shortcode}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{str(uuid.uuid4())[:8]}"
+            
+            # Payload per official Safaricom B2C API v3 specification
             payload = {
-                'InitiatorName': 'Kibeezy',
+                'OriginatorConversationID': originator_conv_id,  # REQUIRED: Unique ID to avoid double disbursement
+                'InitiatorName': config('MPESA_INITIATOR_NAME', default='testapi'),
                 'SecurityCredential': self._get_security_credential(),
-                'CommandID': 'BusinessPayment',  # For regular payouts
-                'Amount': int(amount),
-                'PartyA': initiating_identifier,
-                'PartyB': phone_number,
-                'Remarks': description,
+                'CommandID': 'BusinessPayment',  # Or SalaryPayment, PromotionPayment
+                'Amount': int(amount),  # Integer amount in KES
+                'PartyA': self.shortcode,  # B2C shortcode/paybill
+                'PartyB': phone_number,  # Customer phone (254XXXXXXXXX)
+                'Remarks': description,  # 2-100 characters
                 'QueueTimeOutURL': self._get_b2c_callback_url(),
                 'ResultURL': self._get_b2c_callback_url(),
-                'Occasion': 'KIBEEZY_WITHDRAWAL'
+                'Occasion': 'Market Winnings'  # 1-100 characters
             }
             
-            logger.info(f"📤 Sending B2C Payment request to: {endpoint}")
-            logger.info(f"   Recipient: {phone_number}, Amount: {amount}")
-            logger.info(f"   Initiator: {initiating_identifier}")
+            logger.info(f"📤 B2C v3 Request: recipient={phone_number}, amount={amount}")
+            logger.info(f"   OriginatorConversationID={originator_conv_id}")
+            logger.info(f"   PartyA={self.shortcode}, PartyB={phone_number}")
             
             response = requests.post(endpoint, json=payload, headers=headers, timeout=30)
             
-            logger.info(f"📥 B2C Payment response status: {response.status_code}")
-            logger.info(f"   Response: {response.text}")
+            logger.info(f"📥 B2C v3 Immediate Acknowledgment: {response.status_code}")
             
             response.raise_for_status()
             
             data = response.json()
-            logger.info(f"✅ B2C Payment initiated successfully: {data}")
+            logger.info(f"✅ B2C Acknowledgment Response:")
+            logger.info(f"   ResponseCode={data.get('ResponseCode')}")
+            logger.info(f"   ConversationID={data.get('ConversationID')}")
+            logger.info(f"   OriginatorConversationID={data.get('OriginatorConversationID')}")
+            logger.info(f"   (Actual transaction result will be sent via callback)")
             
             return {
                 'ConversationID': data.get('ConversationID'),
@@ -320,7 +325,7 @@ class MpesaIntegration:
             except:
                 error_response = e.response.text
             
-            logger.error(f"M-Pesa B2C API HTTP Error {e.response.status_code}: {error_response}")
+            logger.error(f"M-Pesa B2C v3 API HTTP Error {e.response.status_code}: {error_response}")
             
             return {
                 'ResponseCode': '1',
@@ -328,14 +333,14 @@ class MpesaIntegration:
                 'CustomerMessage': 'Withdrawal service error. Please contact support.'
             }
         except requests.exceptions.RequestException as e:
-            logger.error(f"M-Pesa B2C API request failed: {str(e)}")
+            logger.error(f"M-Pesa B2C v3 API request failed: {str(e)}")
             return {
                 'ResponseCode': '1',
                 'ResponseDescription': 'Network error',
                 'CustomerMessage': 'Withdrawal service temporarily unavailable. Please try again.'
             }
         except Exception as e:
-            logger.error(f"B2C Payment error: {str(e)}")
+            logger.error(f"B2C v3 Payment error: {str(e)}")
             return {
                 'ResponseCode': '1',
                 'ResponseDescription': str(e),
@@ -343,10 +348,13 @@ class MpesaIntegration:
             }
     
     def _get_security_credential(self):
-        """Get security credential for B2C - in real scenario this would be encrypted"""
-        # For sandbox/testing, return a placeholder
-        # In production, this would be an encrypted password
-        return config('MPESA_B2C_SECURITY_CREDENTIAL', default='test_credential')
+        """Get security credential for B2C - encrypted password from settings"""
+        # Use the encrypted credential from environment
+        credential = config('MPESA_SECURITY_CREDENTIAL_ENCRYPTED', default='')
+        if not credential:
+            logger.error("❌ MPESA_SECURITY_CREDENTIAL_ENCRYPTED not set in environment!")
+            raise ValueError("Missing MPESA_SECURITY_CREDENTIAL_ENCRYPTED in .env")
+        return credential
     
     def _get_b2c_callback_url(self):
         """Get B2C callback URL"""

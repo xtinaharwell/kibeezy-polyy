@@ -21,10 +21,12 @@ class Transaction(models.Model):
     phone_number = models.CharField(max_length=15)
     checkout_request_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     merchant_request_id = models.CharField(max_length=100, null=True, blank=True)
+    external_ref = models.CharField(max_length=100, unique=True, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     reference = models.CharField(max_length=50, null=True, blank=True)
     description = models.CharField(max_length=200, null=True, blank=True)
     related_bet = models.ForeignKey('markets.Bet', on_delete=models.SET_NULL, null=True, blank=True)
+    mpesa_response = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

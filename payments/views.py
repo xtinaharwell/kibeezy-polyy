@@ -158,12 +158,19 @@ def initiate_withdrawal(request):
                 'requested_amount': float(amount)
             }, status=400)
         
-        # Create pending withdrawal transaction
+        # Validate user has phone number
+        if not user.phone_number:
+            return JsonResponse({
+                'error': 'Phone number not set on account',
+                'action': 'update_profile'
+            }, status=400)
+        
+        # Create pending withdrawal transaction with user's phone number
         transaction = Transaction.objects.create(
             user=user,
             type='WITHDRAWAL',
             amount=amount,
-            phone_number=user.phone_number,
+            phone_number=user.phone_number,  # User receiving the funds
             status='PENDING',
             description=f'M-Pesa withdrawal of KSh {amount}'
         )
@@ -172,9 +179,9 @@ def initiate_withdrawal(request):
         client = get_mpesa_client()
         
         response = client.b2c_payment(
-            user.phone_number,
+            user.phone_number,  # User's phone receives the payout
             amount,
-            description=f'Kibeezy withdrawal'
+            description=f'CACHE withdrawal'
         )
         
         if response.get('ResponseCode') == '0':
@@ -192,7 +199,7 @@ def initiate_withdrawal(request):
                 user=user,
                 type_choice='WITHDRAWAL_INITIATED',
                 title='Withdrawal Initiated',
-                message=f'Your withdrawal of KSh {amount} has been initiated',
+                message=f'Your withdrawal of KSh {amount} has been initiated to {user.phone_number}',
                 color_class='blue',
                 related_transaction_id=transaction.id
             )
