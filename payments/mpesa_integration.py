@@ -19,7 +19,7 @@ class MpesaIntegration:
         self.shortcode = config('MPESA_SHORTCODE', default='174379')
         self.passkey = config('MPESA_PASSKEY', default='test_passkey')
         self.production = config('MPESA_PRODUCTION', default=False, cast=bool)
-        self.base_url = 'https://api.safaricom.co.ke' if self.production else 'https://sandbox.safaricom.co.ke'
+        self.base_url = 'https://api.safaricom.co.ke'# if self.production else 'https://sandbox.safaricom.co.ke'
         self.access_token = None
         self.token_expiry = None
     
