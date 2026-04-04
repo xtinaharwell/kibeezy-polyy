@@ -1,5 +1,6 @@
 from django.urls import path
-from .views import signup_view, login_view, check_auth, logout_view, update_profile_view, leaderboard_view
+from .views import (signup_view, login_view, check_auth, logout_view, update_profile_view, 
+                    leaderboard_view, admin_list_users, admin_toggle_support_staff)
 from .kyc_views import start_kyc_verification, verify_kyc_otp, get_kyc_status
 
 urlpatterns = [
@@ -12,4 +13,7 @@ urlpatterns = [
     path('kyc/start/', start_kyc_verification, name='start_kyc'),
     path('kyc/verify/', verify_kyc_otp, name='verify_kyc'),
     path('kyc/status/', get_kyc_status, name='kyc_status'),
+    # Admin endpoints
+    path('admin/users/', admin_list_users, name='admin_list_users'),
+    path('admin/users/<int:user_id>/toggle-support-staff/', admin_toggle_support_staff, name='admin_toggle_support_staff'),
 ]

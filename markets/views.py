@@ -190,6 +190,14 @@ def place_bet(request):
         market.volume = format_volume_value(current_volume + int(amount))
         market.save()
         
+        # Record price history after market is updated
+        from markets.models import PriceHistory
+        PriceHistory.objects.create(
+            market=market,
+            yes_probability=market.yes_probability,
+            no_probability=100 - market.yes_probability
+        )
+        
         action_verb = 'sold' if action == 'sell' else 'placed'
         logger.info(f"Bet {action_verb} by {user.phone_number}: {outcome} {amount} on market {market_id}")
 
@@ -389,3 +397,64 @@ def market_details(request, market_id):
     except Exception as e:
         logger.error(f"Market details error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(['GET'])
+def get_price_history(request, market_id):
+    """Get historical price data for a market based on time period"""
+    try:
+        from datetime import datetime, timedelta
+        from django.utils import timezone
+        
+        market = Market.objects.get(id=market_id)
+        period = request.GET.get('period', 'ALL')
+        
+        # Calculate time range based on period
+        now = timezone.now()
+        time_ranges = {
+            '1H': now - timedelta(hours=1),
+            '6H': now - timedelta(hours=6),
+            '1D': now - timedelta(days=1),
+            '1W': now - timedelta(weeks=1),
+            '1M': now - timedelta(days=30),
+            'ALL': now - timedelta(days=365),
+        }
+        
+        start_time = time_ranges.get(period, now - timedelta(days=365))
+        
+        # Fetch price history
+        from markets.models import PriceHistory
+        history = PriceHistory.objects.filter(
+            market=market,
+            timestamp__gte=start_time
+        ).order_by('timestamp')
+        
+        # If no history, return empty array
+        if not history.exists():
+            return JsonResponse({
+                'market_id': market.id,
+                'period': period,
+                'data': []
+            })
+        
+        # Format data for frontend
+        data = [
+            {
+                'timestamp': h.timestamp.isoformat(),
+                'yes_probability': h.yes_probability,
+                'no_probability': h.no_probability,
+            }
+            for h in history
+        ]
+        
+        return JsonResponse({
+            'market_id': market.id,
+            'period': period,
+            'data': data
+        })
+    except Market.DoesNotExist:
+        return JsonResponse({'error': 'Market not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Price history error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+

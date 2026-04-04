@@ -26,6 +26,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     kyc_verified_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_support_staff = models.BooleanField(default=False, help_text="User can view and respond to support tickets")
     date_joined = models.DateTimeField(auto_now_add=True)
 
     objects = CustomUserManager()

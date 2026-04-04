@@ -202,7 +202,7 @@ def update_profile_view(request):
 
 @require_http_methods(["GET"])
 def leaderboard_view(request):
-    """Return the top payout winners by total completed payout amount."""
+    """Return the top payout winners by total completed payout amount and top wins."""
     try:
         top_winners = (
             CustomUser.objects
@@ -225,8 +225,120 @@ def leaderboard_view(request):
             for user in top_winners
         ]
 
-        return JsonResponse({'leaderboard': leaderboard_data})
+        # Get top wins from bets
+        from markets.models import Bet, Market
+        top_wins_list = Bet.objects.filter(
+            result='WON',
+            payout__isnull=False
+        ).select_related('user', 'market').order_by('-payout')[:6]
+
+        top_wins_data = [
+            {
+                'id': bet.id,
+                'user_name': bet.user.full_name[:20] if bet.user.full_name else bet.user.phone_number,
+                'market_title': bet.market.question[:50],
+                'profit': int(float(bet.payout or 0) - float(bet.amount)),
+                'avatar_color': f'bg-{["blue", "green", "purple", "orange", "pink", "cyan"][i % 6]}-500',
+            }
+            for i, bet in enumerate(top_wins_list)
+        ]
+
+        return JsonResponse({'leaderboard': leaderboard_data, 'top_wins': top_wins_data})
     except Exception as e:
         logger.error(f"Leaderboard error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def admin_list_users(request):
+    """List all users with their support staff status (admin only)"""
+    try:
+        # Check if user is admin (via session or phone header)
+        is_admin = False
+        
+        # Check Django authenticated user (for direct Django requests)
+        if request.user.is_authenticated and request.user.is_staff:
+            is_admin = True
+        # Check phone header (for API requests from frontend)
+        elif request.headers.get('X-User-Phone-Number'):
+            phone_number = request.headers.get('X-User-Phone-Number')
+            try:
+                user_obj = CustomUser.objects.get(phone_number=phone_number)
+                if user_obj.is_staff or user_obj.is_superuser:
+                    is_admin = True
+            except CustomUser.DoesNotExist:
+                pass
+        
+        if not is_admin:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+        users = CustomUser.objects.values(
+            'id', 'full_name', 'phone_number', 'balance', 'is_support_staff', 
+            'kyc_verified', 'is_active', 'date_joined'
+        ).order_by('-date_joined')
+        
+        return JsonResponse({
+            'users': list(users),
+            'count': users.count()
+        }, status=200)
+    except Exception as e:
+        logger.error(f"Admin list users error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+def admin_toggle_support_staff(request, user_id):
+    """Toggle support staff status for a user (admin only)"""
+    try:
+        # Check if user is admin (via session or phone header)
+        is_admin = False
+        
+        # Check Django authenticated user
+        if request.user.is_authenticated and request.user.is_staff:
+            is_admin = True
+        # Check phone header
+        elif request.headers.get('X-User-Phone-Number'):
+            phone_number = request.headers.get('X-User-Phone-Number')
+            try:
+                user_obj = CustomUser.objects.get(phone_number=phone_number)
+                if user_obj.is_staff or user_obj.is_superuser:
+                    is_admin = True
+            except CustomUser.DoesNotExist:
+                pass
+        
+        if not is_admin:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+        # Get the target user
+        try:
+            target_user = CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        # Parse request body
+        data = json.loads(request.body)
+        is_support_staff = data.get('is_support_staff')
+        
+        if is_support_staff is None:
+            return JsonResponse({'error': 'is_support_staff field required'}, status=400)
+        
+        # Update support staff status
+        target_user.is_support_staff = bool(is_support_staff)
+        target_user.save()
+        
+        logger.info(f"User {user_id} support staff status changed to {target_user.is_support_staff}")
+        
+        return JsonResponse({
+            'id': target_user.id,
+            'full_name': target_user.full_name,
+            'phone_number': target_user.phone_number,
+            'is_support_staff': target_user.is_support_staff,
+            'message': f"Support staff status updated successfully"
+        }, status=200)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Admin toggle support staff error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 

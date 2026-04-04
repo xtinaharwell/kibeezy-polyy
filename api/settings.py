@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'markets',
     'payments',
     'notifications',
+    'support',
 ]
 
 
@@ -56,7 +57,7 @@ AUTH_USER_MODEL = 'users.CustomUser'
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -86,7 +87,8 @@ TEMPLATES = [
 WSGI_APPLICATION = 'api.wsgi.app'
 
 AUTHENTICATION_BACKENDS = [
-    'users.backends.PhoneNumberBackend',
+    'users.backends.AdminPhoneBackend',  # For Django admin (allows superusers without is_staff)
+    'users.backends.PhoneNumberBackend',  # For regular app authentication
 ]
 
 
@@ -150,6 +152,9 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ] if os.path.exists(os.path.join(BASE_DIR, 'static')) else []
+
+# WhiteNoise storage
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files
 MEDIA_URL = '/media/'

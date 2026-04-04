@@ -66,6 +66,22 @@ class Bet(models.Model):
         return f"{self.user.phone_number} - {self.market.question} - {self.outcome}"
 
 
+class PriceHistory(models.Model):
+    market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name='price_history')
+    yes_probability = models.IntegerField()
+    no_probability = models.IntegerField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['timestamp']
+        indexes = [
+            models.Index(fields=['market', 'timestamp']),
+        ]
+    
+    def __str__(self):
+        return f"{self.market.id} - Yes: {self.yes_probability}% at {self.timestamp}"
+
+
 class ChatMessage(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_messages')
     market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name='chat_messages')
