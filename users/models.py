@@ -3,9 +3,21 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.core.validators import RegexValidator
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, phone_number, full_name, password=None, **extra_fields):
-        if not phone_number:
-            raise ValueError('The Phone Number must be set')
+    def create_user(self, phone_number=None, full_name=None, password=None, **extra_fields):
+        # For Google OAuth users: phone_number and password are optional
+        # For phone-based auth: phone_number and password are required
+        
+        google_id = extra_fields.get('google_id')
+        email = extra_fields.get('email')
+        
+        # If not a Google OAuth user, require phone_number
+        if not google_id and not phone_number:
+            raise ValueError('The Phone Number must be set for non-OAuth users')
+        
+        # Require full_name for all users
+        if not full_name:
+            raise ValueError('Full name must be set')
+        
         user = self.model(phone_number=phone_number, full_name=full_name, **extra_fields)
         if password:
             user.set_password(password)
@@ -19,8 +31,11 @@ class CustomUserManager(BaseUserManager):
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_regex = RegexValidator(regex=r'^\+?1?\d{9,15}$', message="Phone number must be entered in the format: '0718693484'.")
-    phone_number = models.CharField(validators=[phone_regex], max_length=17, unique=True)
+    phone_number = models.CharField(validators=[phone_regex], max_length=17, unique=True, null=True, blank=True)
     full_name = models.CharField(max_length=255)
+    email = models.EmailField(unique=True, null=True, blank=True)
+    google_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    picture = models.URLField(null=True, blank=True)
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     kyc_verified = models.BooleanField(default=False)
     kyc_verified_at = models.DateTimeField(null=True, blank=True)

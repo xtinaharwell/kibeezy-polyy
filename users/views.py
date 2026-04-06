@@ -342,3 +342,97 @@ def admin_toggle_support_staff(request, user_id):
         logger.error(f"Admin toggle support staff error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def google_auth_view(request):
+    """
+    Google OAuth authentication endpoint.
+    Creates or retrieves a user from Google OAuth data.
+    
+    Expected JSON body:
+    {
+        "email": "user@example.com",
+        "name": "User Name",
+        "google_id": "google-user-id",
+        "picture": "https://profile-picture-url"
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        email = data.get('email')
+        name = data.get('name')
+        google_id = data.get('google_id')
+        picture = data.get('picture')
+        
+        if not all([email, name, google_id]):
+            return JsonResponse({
+                'error': 'Missing required fields: email, name, google_id'
+            }, status=400)
+        
+        # Try to get existing user by google_id
+        user = CustomUser.objects.filter(google_id=google_id).first()
+        
+        if not user:
+            # Try to get existing user by email
+            user = CustomUser.objects.filter(email=email).first()
+        
+        if not user:
+            # Create new user with Google data
+            user = CustomUser.objects.create_user(
+                phone_number=None,  # Not required for Google users
+                full_name=name,
+                password=None,  # No password for Google OAuth users
+                email=email,
+                google_id=google_id,
+                picture=picture
+            )
+            logger.info(f"New Google user created: {email} (Google ID: {google_id})")
+            
+            # Create welcome notification
+            create_notification(
+                user=user,
+                type_choice='WELCOME',
+                title='Welcome to CACHE!',
+                message='Start predicting markets to earn rewards',
+                color_class='blue'
+            )
+        else:
+            # Update existing user with Google data if needed
+            user.google_id = google_id
+            user.picture = picture
+            if not user.email:
+                user.email = email
+            user.save()
+            logger.info(f"Existing user linked to Google: {email}")
+        
+        # Create session for the user
+        # Set the backend to use (required when multiple backends are configured)
+        user.backend = 'users.backends.PhoneNumberBackend'
+        login(request, user)
+        request.session.save()
+        
+        csrf_token = get_token(request)
+        
+        response = JsonResponse({
+            'message': 'Google authentication successful',
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'full_name': user.full_name,
+                'phone_number': user.phone_number,
+                'kyc_verified': user.kyc_verified,
+                'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                'picture': user.picture,
+            },
+            'csrf_token': csrf_token
+        }, status=200)
+        
+        return response
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Google auth error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+

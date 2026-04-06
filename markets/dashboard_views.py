@@ -14,22 +14,39 @@ def get_authenticated_user(request):
     """
     Get authenticated user from either:
     1. Session (if session cookie exists)
-    2. X-User-Phone-Number header (for development/CORS)
+    2. X-User-Phone-Number header (for phone auth development)
+    3. Email from localStorage sent via X-User-Email header (for Google OAuth users)
     """
     # First try session
     if request.user and request.user.is_authenticated:
+        logger.info(f"User authenticated via session: {request.user.id}")
         return request.user
     
-    # Fallback to header-based authentication for development
+    logger.debug(f"Session check failed - request.user: {request.user}, is_authenticated: {request.user.is_authenticated if request.user else 'N/A'}")
+    
+    # Fallback to phone number header (for traditional auth)
     phone_number = request.headers.get('X-User-Phone-Number')
     if phone_number:
         try:
             user = CustomUser.objects.get(phone_number=phone_number)
             if user.is_active:
+                logger.info(f"User authenticated via phone header: {phone_number}")
                 return user
         except CustomUser.DoesNotExist:
-            pass
+            logger.debug(f"Phone number not found: {phone_number}")
     
+    # Fallback to email header (for Google OAuth users)
+    email = request.headers.get('X-User-Email')
+    if email:
+        try:
+            user = CustomUser.objects.get(email=email)
+            if user.is_active:
+                logger.info(f"User authenticated via email header: {email}")
+                return user
+        except CustomUser.DoesNotExist:
+            logger.debug(f"Email not found: {email}")
+    
+    logger.warning(f"No authentication method worked. Headers: {dict(request.headers)}")
     return None
 
 @csrf_exempt
@@ -41,7 +58,8 @@ def user_dashboard(request):
         logger.warning(f"Dashboard access denied - user not authenticated")
         return JsonResponse({'error': 'Authentication required'}, status=401)
     
-    logger.info(f"Dashboard loaded for user: {user.phone_number}")
+    user_identifier = user.phone_number or user.email or f"ID:{user.id}"
+    logger.info(f"Dashboard loaded for user: {user_identifier}")
     
     try:
         
@@ -105,7 +123,8 @@ def transaction_history(request):
         return JsonResponse({'error': 'Authentication required'}, status=401)
     
     try:
-        logger.info(f"Transaction history loaded for user: {user.phone_number}")
+        user_identifier = user.phone_number or user.email or f"ID:{user.id}"
+        logger.info(f"Transaction history loaded for user: {user_identifier}")
         transactions = Transaction.objects.filter(user=user)[:50]  # Last 50 transactions
         
         transactions_data = []
