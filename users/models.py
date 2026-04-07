@@ -50,7 +50,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = ['full_name']
 
     def __str__(self):
-        return self.phone_number
+        # Return phone number if available, otherwise email, otherwise full name
+        if self.phone_number:
+            return self.phone_number
+        elif self.email:
+            return self.email
+        else:
+            return self.full_name
     
     def get_user_statistics(self):
         """Get user statistics: total wagered, wins, losses"""
