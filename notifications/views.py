@@ -10,16 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 def get_authenticated_user(request):
-    """Get authenticated user from session or X-User-Phone-Number header"""
+    """Get authenticated user from session or X-User-Phone-Number/X-User-Email header"""
     # Try session-based auth first
     if request.user and request.user.is_authenticated:
         return request.user
     
-    # Fall back to header-based auth
+    # Fall back to phone number header-based auth
     phone_number = request.headers.get('X-User-Phone-Number')
     if phone_number:
         try:
             return CustomUser.objects.get(phone_number=phone_number)
+        except CustomUser.DoesNotExist:
+            return None
+    
+    # Fall back to email header-based auth (for Google OAuth users)
+    email = request.headers.get('X-User-Email')
+    if email:
+        try:
+            return CustomUser.objects.get(email=email)
         except CustomUser.DoesNotExist:
             return None
     
