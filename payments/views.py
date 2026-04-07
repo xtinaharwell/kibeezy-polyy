@@ -97,7 +97,7 @@ def initiate_stk_push(request):
         response = client.initiate_stk_push(
             user.phone_number,
             amount,
-            account_reference=f"KIBEEZY_{user.id}"
+            account_reference=f"CACHE_{user.id}"
         )
         
         if response.get('ResponseCode') == '0':
