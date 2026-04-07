@@ -255,6 +255,14 @@ def place_bet(request):
                 yes_probability=market.yes_probability,
                 no_probability=100 - market.yes_probability
             )
+        elif market.market_type == 'OPTION_LIST' and market.options:
+            for opt in market.options:
+                PriceHistory.objects.create(
+                    market=market,
+                    option_id=opt.get('id'),
+                    yes_probability=opt.get('yes_probability', 50),
+                    no_probability=opt.get('no_probability', 50)
+                )
         
         action_verb = 'sold' if action == 'sell' else 'placed'
         logger.info(f"Bet {action_verb} by {user.phone_number}: {outcome} {amount} on market {market_id}")
@@ -466,6 +474,7 @@ def get_price_history(request, market_id):
         
         market = Market.objects.get(id=market_id)
         period = request.GET.get('period', 'ALL')
+        option_id = request.GET.get('option_id')
         
         # Calculate time range based on period
         now = timezone.now()
@@ -482,16 +491,23 @@ def get_price_history(request, market_id):
         
         # Fetch price history
         from markets.models import PriceHistory
-        history = PriceHistory.objects.filter(
+        query = PriceHistory.objects.filter(
             market=market,
             timestamp__gte=start_time
-        ).order_by('timestamp')
+        )
+        if option_id:
+            query = query.filter(option_id=option_id)
+        else:
+            query = query.filter(option_id__isnull=True)  # For BINARY markets
+        
+        history = query.order_by('timestamp')
         
         # If no history, return empty array
         if not history.exists():
             return JsonResponse({
                 'market_id': market.id,
                 'period': period,
+                'option_id': option_id,
                 'data': []
             })
         
@@ -508,6 +524,7 @@ def get_price_history(request, market_id):
         return JsonResponse({
             'market_id': market.id,
             'period': period,
+            'option_id': option_id,
             'data': data
         })
     except Market.DoesNotExist:

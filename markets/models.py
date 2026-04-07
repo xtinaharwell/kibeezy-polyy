@@ -77,6 +77,7 @@ class Bet(models.Model):
 
 class PriceHistory(models.Model):
     market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name='price_history')
+    option_id = models.IntegerField(null=True, blank=True)  # For OPTION_LIST markets
     yes_probability = models.IntegerField()
     no_probability = models.IntegerField()
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -84,11 +85,12 @@ class PriceHistory(models.Model):
     class Meta:
         ordering = ['timestamp']
         indexes = [
-            models.Index(fields=['market', 'timestamp']),
+            models.Index(fields=['market', 'option_id', 'timestamp']),
         ]
     
     def __str__(self):
-        return f"{self.market.id} - Yes: {self.yes_probability}% at {self.timestamp}"
+        option_str = f" Option {self.option_id}" if self.option_id else ""
+        return f"{self.market.id}{option_str} - Yes: {self.yes_probability}% at {self.timestamp}"
 
 
 class ChatMessage(models.Model):
