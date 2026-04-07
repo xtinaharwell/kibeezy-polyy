@@ -146,7 +146,7 @@ def initiate_withdrawal(request):
             return JsonResponse({'error': 'Amount is required'}, status=400)
         
         try:
-            amount = validate_amount(amount, min_amount=Decimal('100'), max_amount=Decimal('150000'))
+            amount = validate_amount(amount, min_amount=Decimal('10'), max_amount=Decimal('150000'))
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
         
@@ -272,7 +272,10 @@ def b2c_result_callback(request):
         )
         conversation_id = (
             data.get('Result', {}).get('ConversationID') or 
-            data.get('ConversationID') or
+            data.get('ConversationID')
+        )
+        originator_conv_id = (
+            data.get('Result', {}).get('OriginatorConversationID') or 
             data.get('OriginatorConversationID')
         )
         response_description = (
@@ -280,27 +283,30 @@ def b2c_result_callback(request):
             data.get('ResponseDescription', 'No description')
         )
         
-        if not external_ref and not conversation_id:
+        if not external_ref and not conversation_id and not originator_conv_id:
             logger.warning(f"B2C callback missing identifiers: {data}")
             return JsonResponse({'status': 'error', 'message': 'Missing identifiers'}, status=400)
         
-        # Find transaction by external_ref or conversation_id
+        # Find transaction by external_ref, originator_conv_id, or conversation_id
         tx = None
         try:
             if external_ref:
                 tx = Transaction.objects.get(external_ref=external_ref)
+            elif originator_conv_id:
+                # Search by checkout_request_id (which stores OriginatorConversationID)
+                tx = Transaction.objects.get(checkout_request_id=originator_conv_id)
             elif conversation_id:
                 # Search in mpesa_response JSON for matching conversation_id
                 tx = Transaction.objects.filter(
                     mpesa_response__contains={'conversation_id': conversation_id}
                 ).first()
         except Transaction.DoesNotExist:
-            logger.warning(f"Transaction not found for external_ref={external_ref}, conv_id={conversation_id}")
+            logger.warning(f"Transaction not found for external_ref={external_ref}, originator_conv_id={originator_conv_id}, conv_id={conversation_id}")
             # Still respond 200 OK so Daraja doesn't keep retrying
             return JsonResponse({'status': 'error', 'message': 'transaction_not_found'})
         
         if not tx:
-            logger.warning(f"No transaction found for callback: {external_ref or conversation_id}")
+            logger.warning(f"No transaction found for callback: {external_ref or originator_conv_id or conversation_id}")
             return JsonResponse({'status': 'error', 'message': 'transaction_not_found'})
         
         # Check result code (0 = success)
@@ -326,14 +332,12 @@ def b2c_result_callback(request):
                 })
                 tx.save()
                 
-                # Credit user wallet immediately
-                user = tx.user
-                user.balance += tx.amount
-                user.save()
+                # For withdrawals, balance was already deducted during initiation
+                # No need to credit back - the payout was successful
                 
                 logger.info(
-                    f"User {user.phone_number} credited KES {tx.amount}, "
-                    f"new balance: {user.balance}"
+                    f"Withdrawal completed: tx_id={tx.id}, user={tx.user.phone_number}, "
+                    f"amount={tx.amount}, balance remains: {tx.user.balance}"
                 )
                 
                 # Send notification (optional)
@@ -355,6 +359,16 @@ def b2c_result_callback(request):
                     'callback_time': timezone.now().isoformat()
                 })
                 tx.save()
+                
+                # Refund user balance since payout failed
+                user = tx.user
+                user.balance += tx.amount
+                user.save()
+                
+                logger.info(
+                    f"User {user.phone_number} refunded KES {tx.amount} due to failed payout, "
+                    f"new balance: {user.balance}"
+                )
                 
                 # Log for manual review / retry
                 logger.error(
