@@ -254,13 +254,52 @@ def create_market(request):
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
         
+        # Determine market type
+        market_type = data.get('market_type', 'BINARY')
+        if market_type not in ['BINARY', 'OPTION_LIST']:
+            market_type = 'BINARY'
+        
+        # For BINARY markets
         yes_probability = 50
-        if data.get('yes_probability') is not None:
-            try:
-                yes_probability = int(data.get('yes_probability'))
-                yes_probability = max(1, min(99, yes_probability))
-            except (ValueError, TypeError):
-                yes_probability = 50
+        options_data = None
+        
+        if market_type == 'BINARY':
+            if data.get('yes_probability') is not None:
+                try:
+                    yes_probability = int(data.get('yes_probability'))
+                    yes_probability = max(1, min(99, yes_probability))
+                except (ValueError, TypeError):
+                    yes_probability = 50
+        
+        # For OPTION_LIST markets
+        elif market_type == 'OPTION_LIST':
+            options_list = data.get('options', [])
+            if not options_list or len(options_list) < 2:
+                return JsonResponse({
+                    'error': 'Option list markets require at least 2 options'
+                }, status=400)
+            
+            # Validate and format options
+            options_data = []
+            for idx, opt in enumerate(options_list):
+                if not opt.get('label'):
+                    return JsonResponse({
+                        'error': f'Option {idx + 1} missing label'
+                    }, status=400)
+                
+                prob = opt.get('yes_probability', 50)
+                try:
+                    prob = int(prob)
+                    prob = max(1, min(99, prob))
+                except (ValueError, TypeError):
+                    prob = 50
+                
+                options_data.append({
+                    'id': idx + 1,
+                    'label': opt.get('label'),
+                    'yes_probability': prob,
+                    'no_probability': 100 - prob
+                })
         
         # Get user from header for created_by field
         phone_number = request.headers.get('X-User-Phone-Number')
@@ -278,10 +317,14 @@ def create_market(request):
             description=data.get('description', ''),
             image_url=data.get('image_url', ''),
             end_date=end_date.isoformat() if hasattr(end_date, 'isoformat') else str(end_date),
+            market_type=market_type,
+            yes_probability=yes_probability if market_type == 'BINARY' else 50,
+            options=options_data,
             created_by=created_by
         )
         
         logger.info(f"Market {market.id} created by {request.user.id}: {question}")
+        
         
         return JsonResponse({
             'message': 'Market created successfully',

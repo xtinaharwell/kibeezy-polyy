@@ -16,11 +16,18 @@ class Market(models.Model):
         ('Environment', 'Environment'),
     ]
 
+    MARKET_TYPE_CHOICES = [
+        ('BINARY', 'Binary'),
+        ('OPTION_LIST', 'Option List'),
+    ]
+
     question = models.CharField(max_length=500)
     category = models.CharField(max_length=100, choices=CATEGORY_CHOICES)
     description = models.TextField(blank=True, null=True)
     image_url = models.URLField(max_length=1000, blank=True, null=True)
-    yes_probability = models.IntegerField(default=50)
+    market_type = models.CharField(max_length=20, choices=MARKET_TYPE_CHOICES, default='BINARY')
+    yes_probability = models.IntegerField(default=50)  # For BINARY markets
+    options = models.JSONField(null=True, blank=True)  # For OPTION_LIST markets: [{"id": 1, "label": "...", "yes_probability": 50}, ...]
     volume = models.CharField(max_length=100, default="KSh 0")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN')
     end_date = models.CharField(max_length=100)
@@ -50,6 +57,8 @@ class Bet(models.Model):
     outcome = models.CharField(max_length=10, choices=[('Yes', 'Yes'), ('No', 'No')])
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     entry_probability = models.IntegerField(default=50)
+    option_id = models.IntegerField(null=True, blank=True)  # For OPTION_LIST markets: identifies which option was traded
+    option_label = models.CharField(max_length=255, null=True, blank=True)  # Denormalized for quick lookup
     ORDER_TYPE_CHOICES = [
         ('MARKET', 'Market'),
         ('LIMIT', 'Limit'),

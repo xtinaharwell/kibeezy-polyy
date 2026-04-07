@@ -117,6 +117,28 @@ def place_bet(request):
         if market.status != 'OPEN':
             return JsonResponse({'error': f'Market is {market.status.lower()}'}, status=400)
         
+        # Handle OPTION_LIST markets
+        option_id = None
+        option_label = None
+        entry_probability = market.yes_probability
+        
+        if market.market_type == 'OPTION_LIST':
+            option_id = data.get('option_id')
+            if not option_id:
+                return JsonResponse({'error': 'option_id is required for option list markets'}, status=400)
+            
+            # Find the option and get its probability
+            if market.options and isinstance(market.options, list):
+                matching_option = next((opt for opt in market.options if opt.get('id') == option_id), None)
+                if not matching_option:
+                    return JsonResponse({'error': f'Option {option_id} not found'}, status=400)
+                
+                option_label = matching_option.get('label')
+                if outcome == 'Yes':
+                    entry_probability = matching_option.get('yes_probability', 50)
+                else:
+                    entry_probability = matching_option.get('no_probability', 50)
+        
         # Get action type (buy or sell)
         action = data.get('action', 'buy').lower()
         if action not in ['buy', 'sell']:
@@ -163,7 +185,9 @@ def place_bet(request):
             market=market,
             outcome=outcome,
             amount=amount,
-            entry_probability=market.yes_probability,
+            entry_probability=entry_probability,
+            option_id=option_id,
+            option_label=option_label,
             order_type=order_type,
             limit_price=limit_price,
             quantity=quantity,
@@ -172,7 +196,11 @@ def place_bet(request):
         
         # Create transaction record
         transaction_type = 'BET_SELL' if action == 'sell' else 'BET'
-        description = f'Position closed on: {market.question}' if action == 'sell' else f'Bet placed on: {market.question}'
+        if market.market_type == 'OPTION_LIST' and option_label:
+            description = f'Position closed on: {option_label}' if action == 'sell' else f'Bet placed on: {option_label}'
+        else:
+            description = f'Position closed on: {market.question}' if action == 'sell' else f'Bet placed on: {market.question}'
+        
         Transaction.objects.create(
             user=user,
             type=transaction_type,
@@ -197,11 +225,23 @@ def place_bet(request):
             related_bet_id=bet.id
         )
         
-        # Simple logic to update probability (for demonstration)
-        if outcome == 'Yes':
-            market.yes_probability = min(99, market.yes_probability + 1)
-        else:
-            market.yes_probability = max(1, market.yes_probability - 1)
+        # Update probability for BINARY markets only
+        if market.market_type == 'BINARY':
+            if outcome == 'Yes':
+                market.yes_probability = min(99, market.yes_probability + 1)
+            else:
+                market.yes_probability = max(1, market.yes_probability - 1)
+        # For OPTION_LIST markets, update the specific option probability
+        elif market.market_type == 'OPTION_LIST' and market.options:
+            for opt in market.options:
+                if opt.get('id') == option_id:
+                    if outcome == 'Yes':
+                        opt['yes_probability'] = min(99, opt.get('yes_probability', 50) + 1)
+                    else:
+                        opt['no_probability'] = min(99, opt.get('no_probability', 50) + 1)
+                        opt['yes_probability'] = 100 - opt['no_probability']
+                    break
+            market.options = market.options  # Trigger update
 
         current_volume = parse_volume_value(market.volume)
         market.volume = format_volume_value(current_volume + int(amount))
@@ -209,11 +249,12 @@ def place_bet(request):
         
         # Record price history after market is updated
         from markets.models import PriceHistory
-        PriceHistory.objects.create(
-            market=market,
-            yes_probability=market.yes_probability,
-            no_probability=100 - market.yes_probability
-        )
+        if market.market_type == 'BINARY':
+            PriceHistory.objects.create(
+                market=market,
+                yes_probability=market.yes_probability,
+                no_probability=100 - market.yes_probability
+            )
         
         action_verb = 'sold' if action == 'sell' else 'placed'
         logger.info(f"Bet {action_verb} by {user.phone_number}: {outcome} {amount} on market {market_id}")
