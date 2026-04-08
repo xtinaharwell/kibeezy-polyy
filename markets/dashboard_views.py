@@ -7,6 +7,7 @@ from decimal import Decimal
 from .models import Market, Bet
 from payments.models import Transaction
 from users.models import CustomUser
+from api.validators import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ def get_authenticated_user(request):
     phone_number = request.headers.get('X-User-Phone-Number')
     if phone_number:
         try:
+            # Normalize phone number
+            phone_number = normalize_phone_number(phone_number)
             user = CustomUser.objects.get(phone_number=phone_number)
             if user.is_active:
                 logger.info(f"User authenticated via phone header: {phone_number}")

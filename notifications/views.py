@@ -5,6 +5,7 @@ import json
 import logging
 from notifications.models import Notification
 from users.models import CustomUser
+from api.validators import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,8 @@ def get_authenticated_user(request):
     phone_number = request.headers.get('X-User-Phone-Number')
     if phone_number:
         try:
+            # Normalize phone number
+            phone_number = normalize_phone_number(phone_number)
             return CustomUser.objects.get(phone_number=phone_number)
         except CustomUser.DoesNotExist:
             return None

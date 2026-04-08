@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from .models import SupportMessage, SupportTicket
 from .serializers import SupportMessageSerializer, SupportTicketSerializer, SupportTicketListSerializer
 from users.models import CustomUser
+from api.validators import normalize_phone_number
 
 # ============ USER SUPPORT ENDPOINTS ============
 
@@ -17,6 +18,8 @@ def get_my_tickets(request):
         
         if phone_number:
             try:
+                # Normalize phone number
+                phone_number = normalize_phone_number(phone_number)
                 user = CustomUser.objects.get(phone_number=phone_number)
             except CustomUser.DoesNotExist:
                 return Response(
@@ -51,6 +54,8 @@ def get_ticket_detail(request, ticket_id):
         
         if phone_number:
             try:
+                # Normalize phone number
+                phone_number = normalize_phone_number(phone_number)
                 user = CustomUser.objects.get(phone_number=phone_number)
             except CustomUser.DoesNotExist:
                 return Response(
@@ -91,6 +96,8 @@ def create_support_ticket(request):
         
         if phone_number:
             try:
+                # Normalize phone number
+                phone_number = normalize_phone_number(phone_number)
                 user = CustomUser.objects.get(phone_number=phone_number)
             except CustomUser.DoesNotExist:
                 return Response(
@@ -156,6 +163,8 @@ def add_message_to_ticket(request, ticket_id):
         
         if phone_number:
             try:
+                # Normalize phone number
+                phone_number = normalize_phone_number(phone_number)
                 user = CustomUser.objects.get(phone_number=phone_number)
             except CustomUser.DoesNotExist:
                 return Response(

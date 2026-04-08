@@ -12,6 +12,7 @@ from api.validators import (
     validate_market_question,
     validate_market_category,
     validate_date_string,
+    normalize_phone_number,
     ValidationError
 )
 
@@ -27,6 +28,8 @@ def is_admin(user, request=None):
     if request and request.headers.get('X-User-Phone-Number'):
         phone_number = request.headers.get('X-User-Phone-Number')
         try:
+            # Normalize phone number
+            phone_number = normalize_phone_number(phone_number)
             user_obj = CustomUser.objects.get(phone_number=phone_number)
             return user_obj.is_staff and user_obj.is_superuser
         except CustomUser.DoesNotExist:

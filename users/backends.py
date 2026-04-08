@@ -1,5 +1,6 @@
 from django.contrib.auth.backends import ModelBackend
 from .models import CustomUser
+from api.validators import normalize_phone_number
 
 
 class PhoneNumberBackend(ModelBackend):
@@ -9,6 +10,9 @@ class PhoneNumberBackend(ModelBackend):
     """
     def authenticate(self, request, phone_number=None, password=None, **kwargs):
         try:
+            # Normalize phone number before lookup
+            if phone_number:
+                phone_number = normalize_phone_number(phone_number)
             user = CustomUser.objects.get(phone_number=phone_number)
         except CustomUser.DoesNotExist:
             return None
@@ -39,6 +43,9 @@ class AdminPhoneBackend(ModelBackend):
     def authenticate(self, request, username=None, password=None, **kwargs):
         # Try to get user by phone_number (since we use phone as username)
         try:
+            # Normalize phone number before lookup
+            if username:
+                username = normalize_phone_number(username)
             user = CustomUser.objects.get(phone_number=username)
         except CustomUser.DoesNotExist:
             return None

@@ -14,10 +14,26 @@ class ValidationError(Exception):
         super().__init__(self.message)
 
 
+def normalize_phone_number(phone_number):
+    """
+    Normalize Kenyan phone number to international format (254xxxxxxxxx)
+    Accepts: 254xxxxxxxxx, 0xxxxxxxxx, +254xxxxxxxxx
+    Returns: Normalized format (254xxxxxxxxx)
+    """
+    phone = str(phone_number).replace('+', '').replace(' ', '').replace('-', '')
+    
+    # Convert local format (0xxxxxxxxx) to international format (254xxxxxxxxx)
+    if phone.startswith('0'):
+        return '254' + phone[1:]
+    else:
+        return phone
+
+
 def validate_phone_number(phone_number):
     """
-    Validate Kenyan phone number format
-    Accepts: 254xxxxxxxxx or 0xxxxxxxxx
+    Validate and normalize Kenyan phone number format
+    Accepts: 254xxxxxxxxx, 0xxxxxxxxx, +254xxxxxxxxx
+    Returns: Normalized format (254xxxxxxxxx)
     """
     phone = str(phone_number).replace('+', '').replace(' ', '').replace('-', '')
     
@@ -31,9 +47,12 @@ def validate_phone_number(phone_number):
     
     for pattern in patterns:
         if re.match(pattern, phone):
-            return phone
+            break
+    else:
+        raise ValidationError('Phone number must be in format 254xxxxxxxxx or 0xxxxxxxxx')
     
-    raise ValidationError('Phone number must be in format 254xxxxxxxxx or 0xxxxxxxxx')
+    # Normalize to international format (254xxxxxxxxx)
+    return normalize_phone_number(phone)
 
 
 def validate_amount(amount, min_amount=Decimal('1'), max_amount=Decimal('150000')):

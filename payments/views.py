@@ -7,7 +7,7 @@ from django.utils import timezone
 from decimal import Decimal
 from .mpesa_integration import get_mpesa_client
 from .models import Transaction
-from api.validators import validate_amount, ValidationError
+from api.validators import validate_amount, normalize_phone_number, ValidationError
 from users.models import CustomUser
 from notifications.views import create_notification
 
@@ -49,6 +49,8 @@ def get_authenticated_user(request):
     phone_number = request.headers.get('X-User-Phone-Number')
     if phone_number:
         try:
+            # Normalize phone number
+            phone_number = normalize_phone_number(phone_number)
             return CustomUser.objects.get(phone_number=phone_number)
         except CustomUser.DoesNotExist:
             return None

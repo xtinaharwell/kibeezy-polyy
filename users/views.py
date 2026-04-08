@@ -8,7 +8,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.middleware.csrf import get_token
 from .models import CustomUser
-from api.validators import validate_phone_number, validate_password, validate_full_name, ValidationError
+from api.validators import validate_phone_number, validate_password, validate_full_name, normalize_phone_number, ValidationError
 from notifications.views import create_notification
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,12 @@ def login_view(request):
 
         if not all([phone_number, password]):
             return JsonResponse({'error': 'Missing credentials: phone_number, password'}, status=400)
+
+        # Normalize phone number before authentication
+        try:
+            phone_number = normalize_phone_number(phone_number)
+        except:
+            return JsonResponse({'error': 'Invalid phone number format'}, status=400)
 
         logger.info(f"Login attempt for phone: {phone_number}")
         user = authenticate(request, phone_number=phone_number, password=password)
@@ -164,6 +170,8 @@ def update_profile_view(request):
         phone_number = request.headers.get('X-User-Phone-Number')
         if phone_number:
             try:
+                # Normalize phone number
+                phone_number = normalize_phone_number(phone_number)
                 user = CustomUser.objects.get(phone_number=phone_number)
             except CustomUser.DoesNotExist:
                 user = None
@@ -263,6 +271,8 @@ def admin_list_users(request):
         elif request.headers.get('X-User-Phone-Number'):
             phone_number = request.headers.get('X-User-Phone-Number')
             try:
+                # Normalize phone number
+                phone_number = normalize_phone_number(phone_number)
                 user_obj = CustomUser.objects.get(phone_number=phone_number)
                 if user_obj.is_staff or user_obj.is_superuser:
                     is_admin = True
