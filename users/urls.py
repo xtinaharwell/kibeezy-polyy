@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (signup_view, login_view, check_auth, logout_view, update_profile_view, 
                     leaderboard_view, admin_list_users, admin_toggle_support_staff, google_auth_view)
 from .kyc_views import start_kyc_verification, verify_kyc_otp, get_kyc_status
+from .migration_views import migrate_phone_numbers
 
 urlpatterns = [
     path('signup/', signup_view, name='signup'),
@@ -17,4 +18,7 @@ urlpatterns = [
     # Admin endpoints
     path('admin/users/', admin_list_users, name='admin_list_users'),
     path('admin/users/<int:user_id>/toggle-support-staff/', admin_toggle_support_staff, name='admin_toggle_support_staff'),
+    
+    # Temporary migration endpoints (for one-time fixes)
+    path('migrate/normalize-phones/', migrate_phone_numbers, name='migrate_normalize_phones'),
 ]
