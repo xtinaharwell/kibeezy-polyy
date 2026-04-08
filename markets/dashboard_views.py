@@ -165,7 +165,7 @@ def initiate_withdrawal(request):
         
         # Check if user has enough balance
         if amount > user.balance:
-            return JsonResponse({'error': f'Insufficient balance. Available: KSH {user.balance}'}, status=400)
+            return JsonResponse({'error': f'Insufficient balance. Available: KES {user.balance}'}, status=400)
         
         # Deduct from balance immediately (can be refunded if withdrawal fails)
         user.balance -= amount
@@ -178,7 +178,7 @@ def initiate_withdrawal(request):
             amount=amount,
             phone_number=user.phone_number,
             status='PENDING',
-            description=f'Withdrawal of KSH {amount}'
+            description=f'Withdrawal of KES {amount}'
         )
         
         # TODO: Integrate with M-Pesa API to send money

@@ -15,7 +15,7 @@ try:
     user.balance = Decimal('15000.00')
     user.save()
     print(f"✅ Successfully updated balance for {phone_number}")
-    print(f"   New balance: KSh {user.balance}")
+    print(f"   New balance: KES {user.balance}")
 except CustomUser.DoesNotExist:
     print(f"❌ User with phone number {phone_number} not found")
 except Exception as e:

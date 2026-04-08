@@ -110,7 +110,7 @@ def initiate_stk_push(request):
                 checkout_request_id=response.get('CheckoutRequestID'),
                 merchant_request_id=response.get('MerchantRequestID'),
                 status='PENDING',
-                description=f'M-Pesa deposit of KSH {amount}'
+                description=f'M-Pesa deposit of KES {amount}'
             )
             
             logger.info(f"STK Push initiated for user {user.phone_number}, amount: {amount}")
@@ -180,7 +180,7 @@ def initiate_withdrawal(request):
             amount=amount,
             phone_number=user.phone_number,  # User receiving the funds
             status='PENDING',
-            description=f'M-Pesa withdrawal of KSh {amount}'
+            description=f'M-Pesa withdrawal of KES {amount}'
         )
         
         # Get M-Pesa client and initiate B2C payment
@@ -207,7 +207,7 @@ def initiate_withdrawal(request):
                 user=user,
                 type_choice='WITHDRAWAL_INITIATED',
                 title='Withdrawal Initiated',
-                message=f'Your withdrawal of KSh {amount} has been initiated to {user.phone_number}',
+                message=f'Your withdrawal of KES {amount} has been initiated to {user.phone_number}',
                 color_class='blue',
                 related_transaction_id=transaction.id
             )
@@ -471,7 +471,7 @@ def mpesa_callback(request):
                 # Payment successful
                 transaction.status = 'COMPLETED'
                 transaction.receipt_number = result.get('receipt_number')
-                transaction.description = f"Deposit successful: KSh {transaction.amount}"
+                transaction.description = f"Deposit successful: KES {transaction.amount}"
                 transaction.save()
                 
                 # Update user balance
@@ -484,7 +484,7 @@ def mpesa_callback(request):
                     user=user,
                     type_choice='DEPOSIT_CONFIRMED',
                     title='Deposit Confirmed',
-                    message=f'Your deposit of KSh {transaction.amount} has been confirmed',
+                    message=f'Your deposit of KES {transaction.amount} has been confirmed',
                     color_class='green',
                     related_transaction_id=transaction.id
                 )

@@ -46,7 +46,7 @@ npm run dev
 3. Go to **Dashboard**
 4. Click **Deposit** button
 5. Enter an amount (e.g., 500)
-6. Click **Deposit KSh 500**
+6. Click **Deposit KES 500**
 
 **Mock Mode Result:** You'll see success message immediately ✅
 

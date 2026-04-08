@@ -26,13 +26,13 @@ notifications = [
     {
         'type': 'DEPOSIT_CONFIRMED',
         'title': 'Deposit Confirmed',
-        'message': 'Your deposit of KSh 5,000 has been confirmed',
+        'message': 'Your deposit of KES 5,000 has been confirmed',
         'color_class': 'green'
     },
     {
         'type': 'BET_PLACED',
         'title': 'Bet Placed Successfully',
-        'message': 'Your prediction of Yes for KSh 2,000 has been placed on "Will Kenya lower interest rates by June?"',
+        'message': 'Your prediction of Yes for KES 2,000 has been placed on "Will Kenya lower interest rates by June?"',
         'color_class': 'purple'
     }
 ]

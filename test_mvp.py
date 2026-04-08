@@ -60,7 +60,7 @@ def test_user_creation():
             print("✓ Test user already exists (balance reset)")
         
         print(f"  Phone: {user.phone_number}")
-        print(f"  Balance: KSH {user.balance}")
+        print(f"  Balance: KES {user.balance}")
         return user
     except Exception as e:
         print(f"✗ Failed: {str(e)}")
@@ -76,7 +76,7 @@ def test_market_creation(user):
     try:
         markets_data = [
             {
-                "question": "Will BTC reach KSh 5M by end of 2024?",
+                "question": "Will BTC reach KES 5M by end of 2024?",
                 "description": "Bitcoin price prediction for end of year market",
                 "status": "OPEN",
                 "category": "Crypto"
@@ -127,7 +127,7 @@ def test_place_bet(user, markets):
             return False
         
         initial_balance = user.balance
-        print(f"Initial balance: KSH {initial_balance}")
+        print(f"Initial balance: KES {initial_balance}")
         
         bet = Bet.objects.create(
             market=markets[0],
@@ -142,9 +142,9 @@ def test_place_bet(user, markets):
         deducted_amount = initial_balance - new_balance
         
         print(f"Bet placed on: {markets[0].question}")
-        print(f"Bet amount: KSH 100.00")
-        print(f"New balance: KSH {new_balance}")
-        print(f"Amount deducted: KSH {deducted_amount}")
+        print(f"Bet amount: KES 100.00")
+        print(f"New balance: KES {new_balance}")
+        print(f"Amount deducted: KES {deducted_amount}")
         
         # Verify balance was deducted
         if deducted_amount == Decimal("100.00"):
@@ -172,7 +172,7 @@ def test_transaction_history(user):
         if transactions.exists():
             print(f"✓ Found {transactions.count()} transactions")
             for txn in transactions:
-                print(f"  - {txn.type}: KSH {txn.amount} ({txn.status})")
+                print(f"  - {txn.type}: KES {txn.amount} ({txn.status})")
             return True
         else:
             print("⚠ No transactions found (might be first time)")
@@ -221,10 +221,10 @@ def test_market_resolution(user, markets, bet):
         print(f"Market resolved: {market.question}")
         print(f"Outcome: {market.resolved_outcome}")
         print(f"Bet result: {bet.result}")
-        print(f"Payout (before fee): KSH {payout_amount_before_fee}")
-        print(f"Payout (after 10% fee): KSH {payout_to_user}")
-        print(f"Balance before: KSH {initial_balance}")
-        print(f"Balance after: KSH {final_balance}")
+        print(f"Payout (before fee): KES {payout_amount_before_fee}")
+        print(f"Payout (after 10% fee): KES {payout_to_user}")
+        print(f"Balance before: KES {initial_balance}")
+        print(f"Balance after: KES {final_balance}")
         print("✓ Market resolution and payout processing complete")
         return True
         

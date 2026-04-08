@@ -28,7 +28,7 @@ class Market(models.Model):
     market_type = models.CharField(max_length=20, choices=MARKET_TYPE_CHOICES, default='BINARY')
     yes_probability = models.IntegerField(default=50)  # For BINARY markets
     options = models.JSONField(null=True, blank=True)  # For OPTION_LIST markets: [{"id": 1, "label": "...", "yes_probability": 50}, ...]
-    volume = models.CharField(max_length=100, default="KSh 0")
+    volume = models.CharField(max_length=100, default="KES 0")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN')
     end_date = models.CharField(max_length=100)
     resolved_outcome = models.CharField(max_length=10, choices=[('Yes', 'Yes'), ('No', 'No')], null=True, blank=True)

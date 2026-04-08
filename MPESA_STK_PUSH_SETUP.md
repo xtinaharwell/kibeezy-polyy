@@ -136,7 +136,7 @@ Transaction(
     checkout_request_id='ws_CO_DMZ_...',  # M-Pesa reference
     merchant_request_id='txn_123...',     # Merchant reference
     status='PENDING' | 'COMPLETED' | 'FAILED',
-    description='M-Pesa deposit of KSH 500',
+    description='M-Pesa deposit of KES 500',
     created_at=datetime,
     updated_at=datetime
 )

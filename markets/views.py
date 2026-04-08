@@ -15,7 +15,7 @@ def parse_volume_value(volume_str: str) -> int:
     """Convert a formatted volume string to an integer amount in KES."""
     if not volume_str:
         return 0
-    normalized = volume_str.replace('KSh', '').replace('KES', '').replace(' ', '').strip()
+    normalized = volume_str.replace('KES', '').replace('KES', '').replace(' ', '').strip()
     if normalized.endswith(('M', 'm')):
         try:
             return int(float(normalized[:-1]) * 1_000_000)
@@ -35,10 +35,10 @@ def parse_volume_value(volume_str: str) -> int:
 def format_volume_value(amount: int) -> str:
     """Format a KES amount into a human-readable volume string."""
     if amount >= 1_000_000:
-        return f"KSh {amount / 1_000_000:.1f}M".replace('.0M', 'M')
+        return f"KES {amount / 1_000_000:.1f}M".replace('.0M', 'M')
     if amount >= 1_000:
-        return f"KSh {amount / 1_000:.1f}K".replace('.0K', 'K')
-    return f"KSh {amount}"
+        return f"KES {amount / 1_000:.1f}K".replace('.0K', 'K')
+    return f"KES {amount}"
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ def place_bet(request):
         if action == 'buy':
             # Check if user has sufficient balance
             if amount > user.balance:
-                return JsonResponse({'error': f'Insufficient balance. Available: KSH {user.balance}'}, status=400)
+                return JsonResponse({'error': f'Insufficient balance. Available: KES {user.balance}'}, status=400)
             # Deduct from balance
             user.balance -= amount
         else:  # sell
@@ -219,7 +219,7 @@ def place_bet(request):
             user=user,
             type_choice=notification_type,
             title=notification_title,
-            message=f'Your prediction of {outcome} for KSh {amount} has been {action_text}',
+            message=f'Your prediction of {outcome} for KES {amount} has been {action_text}',
             color_class='green' if action == 'sell' else 'purple',
             related_market_id=market.id,
             related_bet_id=bet.id

@@ -12,7 +12,7 @@ def seed():
             "question": "Will William Ruto be re-elected in 2027?",
             "category": "Politics",
             "yes_probability": 45,
-            "volume": "KSh 1.2M",
+            "volume": "KES 1.2M",
             "end_date": "Aug 2027",
             "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/William_Ruto_2023.jpg/440px-William_Ruto_2023.jpg"
         },
@@ -20,7 +20,7 @@ def seed():
             "question": "Will the Central Bank of Kenya lower the base rate by June?",
             "category": "Economy",
             "yes_probability": 68,
-            "volume": "KSh 450K",
+            "volume": "KES 450K",
             "end_date": "Jun 30, 2026",
             "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Central_Bank_of_Kenya_building.jpg/500px-Central_Bank_of_Kenya_building.jpg"
         },
@@ -28,7 +28,7 @@ def seed():
             "question": "Will Eliud Kipchoge win his next major marathon?",
             "category": "Sports",
             "yes_probability": 72,
-            "volume": "KSh 890K",
+            "volume": "KES 890K",
             "end_date": "Apr 15, 2026",
             "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Eliud_Kipchoge_after_2018_Berlin_Marathon.jpg/440px-Eliud_Kipchoge_after_2018_Berlin_Marathon.jpg"
         },
@@ -36,7 +36,7 @@ def seed():
             "question": "Will Nairobi receive above-average rainfall in March 2026?",
             "category": "Environment",
             "yes_probability": 55,
-            "volume": "KSh 120K",
+            "volume": "KES 120K",
             "end_date": "Mar 31, 2026",
             "image_url": "https://images.unsplash.com/photo-1549417229-aa67d3263c09?q=80&w=1000&auto=format&fit=crop"
         },
@@ -44,7 +44,7 @@ def seed():
             "question": "Will Kenya launch its own Digital Currency (CBDC) by 2027?",
             "category": "Crypto",
             "yes_probability": 30,
-            "volume": "KSh 210K",
+            "volume": "KES 210K",
             "end_date": "Dec 31, 2026",
             "image_url": "https://images.unsplash.com/photo-1621761191319-c6fb62004040?q=80&w=1000&auto=format&fit=crop"
         },
@@ -52,9 +52,9 @@ def seed():
             "question": "Will Majembe win against Vunja Mbavu Destroyer?",
             "category": "Sports",
             "yes_probability": 58,
-            "volume": "KSh 500K",
+            "volume": "KES 500K",
             "end_date": "Apr 4, 2026",
-            "description": "Celebrity boxing match between Majembe (known for technical finesse and sharp footwork) and Vunja Mbavu Destroyer (viral personality with aggressive energy and 'weka mawe' catchphrase). Event held in Nairobi, Kenya. Prize pool: KSh 1M with government backing. Both fighters are amateur boxers turned viral sensations with significant public following.",
+            "description": "Celebrity boxing match between Majembe (known for technical finesse and sharp footwork) and Vunja Mbavu Destroyer (viral personality with aggressive energy and 'weka mawe' catchphrase). Event held in Nairobi, Kenya. Prize pool: KES 1M with government backing. Both fighters are amateur boxers turned viral sensations with significant public following.",
             "image_url": "https://images.unsplash.com/photo-1549988534-f81534c79311?q=80&w=1000&auto=format&fit=crop"
         }
     ]

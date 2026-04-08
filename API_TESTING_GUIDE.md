@@ -413,7 +413,7 @@ curl -X POST http://localhost:8000/api/markets/place_bet/ \
 Response:
 ```json
 {
-  "error": "Insufficient balance. Available: KSH 100.00"
+  "error": "Insufficient balance. Available: KES 100.00"
 }
 ```
 
