@@ -105,6 +105,7 @@ def login_view(request):
                     'full_name': user.full_name,
                     'id': user.id,
                     'kyc_verified': user.kyc_verified,
+                    'phone_locked': user.phone_locked,
                     'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 },
                 'csrf_token': csrf_token
@@ -431,6 +432,7 @@ def google_auth_view(request):
                 'full_name': user.full_name,
                 'phone_number': user.phone_number,
                 'kyc_verified': user.kyc_verified,
+                'phone_locked': user.phone_locked,
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 'picture': user.picture,
             }
@@ -469,6 +471,10 @@ def add_phone_number_view(request):
         if not user:
             return JsonResponse({'error': 'User not found'}, status=404)
         
+        # Check if phone is already locked (prevent editing after first deposit)
+        if user.phone_locked:
+            return JsonResponse({'error': 'Phone number is locked and cannot be changed'}, status=400)
+        
         # Parse request body
         data = json.loads(request.body)
         phone_number = data.get('phone_number')
@@ -501,6 +507,7 @@ def add_phone_number_view(request):
                 'full_name': user.full_name,
                 'phone_number': user.phone_number,
                 'kyc_verified': user.kyc_verified,
+                'phone_locked': user.phone_locked,
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 'picture': user.picture,
             }
@@ -511,5 +518,49 @@ def add_phone_number_view(request):
     except Exception as e:
         logger.error(f"Add phone number error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def lock_phone_after_deposit_view(request):
+    """
+    Lock user's phone number after first successful/confirmed deposit.
+    Prevents fraud by ensuring users cannot change phone after making deposits.
+    Requires X-User-Phone-Number or X-User-Email header for authentication.
+    """
+    try:
+        # Authenticate user
+        user = None
+        phone_number = request.headers.get('X-User-Phone-Number')
+        email = request.headers.get('X-User-Email')
+        
+        if phone_number:
+            try:
+                phone_number = normalize_phone_number(phone_number)
+                user = CustomUser.objects.filter(phone_number=phone_number).first()
+            except:
+                pass
+        
+        if not user and email:
+            user = CustomUser.objects.filter(email=email).first()
+        
+        if not user:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        # If phone not already locked, lock it
+        if not user.phone_locked:
+            user.phone_locked = True
+            user.save()
+            logger.info(f"Phone number locked for user {user.id} after first deposit")
+        
+        return JsonResponse({
+            'message': 'Phone number locked successfully',
+            'phone_locked': user.phone_locked
+        }, status=200)
+    
+    except Exception as e:
+        logger.error(f"Lock phone error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
 
 

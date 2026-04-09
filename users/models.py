@@ -32,6 +32,7 @@ class CustomUserManager(BaseUserManager):
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_regex = RegexValidator(regex=r'^\+?1?\d{9,15}$', message="Phone number must be entered in the format: '0718693484'.")
     phone_number = models.CharField(validators=[phone_regex], max_length=17, unique=True, null=True, blank=True)
+    phone_locked = models.BooleanField(default=False, help_text="Locked after first confirmed deposit to prevent fraud")
     full_name = models.CharField(max_length=255)
     email = models.EmailField(unique=True, null=True, blank=True)
     google_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
