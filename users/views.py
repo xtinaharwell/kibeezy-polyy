@@ -183,15 +183,30 @@ def update_profile_view(request):
     try:
         data = json.loads(request.body)
         full_name = data.get('full_name')
+        phone_number = data.get('phone_number')
         
         if full_name:
             try:
                 full_name = validate_full_name(full_name)
                 user.full_name = full_name
-                user.save()
             except ValidationError as e:
                 return JsonResponse({'error': e.message}, status=400)
         
+        if phone_number:
+            # Check if phone is locked
+            if user.phone_locked:
+                return JsonResponse({'error': 'Phone number is locked after first deposit and cannot be changed'}, status=400)
+            
+            try:
+                phone_number = validate_phone_number(phone_number)
+                # Check if new phone number is already in use
+                if CustomUser.objects.filter(phone_number=phone_number).exclude(id=user.id).exists():
+                    return JsonResponse({'error': 'Phone number already in use'}, status=400)
+                user.phone_number = phone_number
+            except ValidationError as e:
+                return JsonResponse({'error': e.message}, status=400)
+        
+        user.save()
         logger.info(f"Profile updated for user: {user.phone_number}")
         return JsonResponse({
             'message': 'Profile updated successfully',
@@ -200,6 +215,7 @@ def update_profile_view(request):
                 'full_name': user.full_name,
                 'balance': str(user.balance),
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                'phone_locked': user.phone_locked,
             }
         })
     except json.JSONDecodeError:
