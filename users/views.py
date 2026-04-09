@@ -166,7 +166,7 @@ def update_profile_view(request):
     # Try session-based auth first
     user = request.user if request.user and request.user.is_authenticated else None
     
-    # Fall back to header-based auth
+    # Fall back to phone header auth
     if not user:
         phone_number = request.headers.get('X-User-Phone-Number')
         if phone_number:
@@ -174,6 +174,15 @@ def update_profile_view(request):
                 # Normalize phone number
                 phone_number = normalize_phone_number(phone_number)
                 user = CustomUser.objects.get(phone_number=phone_number)
+            except CustomUser.DoesNotExist:
+                user = None
+    
+    # Fall back to email header auth (for Google OAuth users)
+    if not user:
+        email = request.headers.get('X-User-Email')
+        if email:
+            try:
+                user = CustomUser.objects.get(email=email)
             except CustomUser.DoesNotExist:
                 user = None
     
