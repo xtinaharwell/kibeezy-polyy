@@ -416,16 +416,12 @@ def google_auth_view(request):
             user.save()
             logger.info(f"Existing user linked to Google: {email}")
         
-        # Create Django session for the Google user (same as phone login)
-        # This ensures backend endpoints can verify the user
-        user.backend = 'users.backends.PhoneNumberBackend'
-        login(request, user)
-        request.session.save()
+        # IMPORTANT: Do NOT create Django session here!
+        # This is called from NextAuth's server-side signIn callback via fetch()
+        # Any session cookies set here won't reach the browser
+        # NextAuth will handle JWT token creation instead
         
-        logger.info(f"Google user authenticated and session created: {user.email} (Session: {request.session.session_key})")
-        
-        # Get CSRF token for secure requests
-        csrf_token = get_token(request)
+        logger.info(f"Google user processed: {user.email}")
         
         response = JsonResponse({
             'message': 'Google authentication successful',
@@ -437,11 +433,10 @@ def google_auth_view(request):
                 'kyc_verified': user.kyc_verified,
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 'picture': user.picture,
-            },
-            'csrf_token': csrf_token
+            }
         }, status=200)
         
-        logger.info(f"Google login response ready for {user.email}")
+        logger.info(f"Google oauth response ready for {user.email}")
         
         return response
     
