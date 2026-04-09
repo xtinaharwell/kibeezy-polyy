@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import (signup_view, login_view, check_auth, logout_view, update_profile_view, 
-                    leaderboard_view, admin_list_users, admin_toggle_support_staff, google_auth_view)
+                    leaderboard_view, admin_list_users, admin_toggle_support_staff, google_auth_view, add_phone_number_view)
 from .kyc_views import start_kyc_verification, verify_kyc_otp, get_kyc_status
 from .migration_views import migrate_phone_numbers
 
@@ -10,6 +10,7 @@ urlpatterns = [
     path('logout/', logout_view, name='logout'),
     path('check/', check_auth, name='check_auth'),
     path('google/', google_auth_view, name='google_auth'),
+    path('add-phone/', add_phone_number_view, name='add_phone'),
     path('update-profile/', update_profile_view, name='update_profile'),
     path('leaderboard/', leaderboard_view, name='leaderboard'),
     path('kyc/start/', start_kyc_verification, name='start_kyc'),

@@ -446,3 +446,70 @@ def google_auth_view(request):
         logger.error(f"Google auth error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_phone_number_view(request):
+    """
+    Allow Google OAuth users to add a phone number after signup.
+    Requires X-User-Email header for authentication.
+    
+    Expected JSON body:
+    {
+        "phone_number": "0712345678"
+    }
+    """
+    try:
+        # Authenticate using email header (for Google OAuth users)
+        email = request.headers.get('X-User-Email')
+        if not email:
+            return JsonResponse({'error': 'Authentication required (X-User-Email header)'}, status=401)
+        
+        user = CustomUser.objects.filter(email=email).first()
+        if not user:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        # Parse request body
+        data = json.loads(request.body)
+        phone_number = data.get('phone_number')
+        
+        if not phone_number:
+            return JsonResponse({'error': 'Phone number is required'}, status=400)
+        
+        # Validate phone number
+        try:
+            phone_number = validate_phone_number(phone_number)
+            phone_number = normalize_phone_number(phone_number)
+        except ValidationError as e:
+            return JsonResponse({'error': e.message}, status=400)
+        
+        # Check if phone number already exists
+        if CustomUser.objects.filter(phone_number=phone_number).exclude(id=user.id).exists():
+            return JsonResponse({'error': 'Phone number already registered'}, status=400)
+        
+        # Update user with phone number
+        user.phone_number = phone_number
+        user.save()
+        
+        logger.info(f"Phone number added for Google user: {user.email} -> {phone_number}")
+        
+        return JsonResponse({
+            'message': 'Phone number added successfully',
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'full_name': user.full_name,
+                'phone_number': user.phone_number,
+                'kyc_verified': user.kyc_verified,
+                'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                'picture': user.picture,
+            }
+        }, status=200)
+    
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Add phone number error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
