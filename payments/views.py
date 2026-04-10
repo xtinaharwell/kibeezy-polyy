@@ -475,30 +475,37 @@ def mpesa_callback(request):
                 logger.warning(f"Transaction not found for checkout_request_id: {checkout_request_id}")
                 return JsonResponse({'error': 'Transaction not found'}, status=404)
             
+            # Idempotency check: if transaction is already COMPLETED, don't re-process
+            if transaction.status == 'COMPLETED':
+                logger.info(f"✓ Transaction {transaction.id} already completed, ignoring duplicate callback")
+                return JsonResponse({'status': 'success', 'message': 'Transaction already processed'}, status=200)
+            
             if result.get('status') == 'COMPLETED':
-                # Payment successful - use atomic transaction processing
+                # Payment successful - update existing transaction and user balance atomically
                 try:
-                    user = transaction.user
-                    receipt_data = {
-                        'receipt_number': result.get('receipt_number'),
-                        'checkout_request_id': transaction.checkout_request_id,
-                    }
-                    
-                    # Create new atomic transaction that updates balance safely
-                    verified_txn = safe_process_deposit(
-                        user=user,
-                        amount=transaction.amount,
-                        external_ref=f"DEPOSIT-VERIFIED-{transaction.id}",
-                        transaction_type='DEPOSIT',
-                        mpesa_response=receipt_data,
-                        description=f"Deposit successful: KES {transaction.amount}",
-                        checkout_request_id=transaction.checkout_request_id
-                    )
-                    
-                    # Mark original pending transaction as completed
-                    transaction.status = 'COMPLETED'
-                    transaction.receipt_number = result.get('receipt_number')
-                    transaction.save()
+                    from django.db import transaction as db_transaction
+                    with db_transaction.atomic():
+                        user = transaction.user
+                        
+                        # Verify user is active
+                        if not user.is_active:
+                            raise TransactionError(f"User account is inactive")
+                        
+                        # Update user balance atomically
+                        user.balance += transaction.amount
+                        user.save(update_fields=['balance'])
+                        
+                        # Update existing transaction record
+                        transaction.status = 'COMPLETED'
+                        transaction.receipt_number = result.get('receipt_number')
+                        transaction.mpesa_response = {
+                            'receipt_number': result.get('receipt_number'),
+                            'checkout_request_id': transaction.checkout_request_id,
+                        }
+                        transaction.description = f"Deposit successful: KES {transaction.amount}"
+                        transaction.save()
+                        
+                        logger.info(f"✅ Payment successful for user {user.phone_number}, amount: {transaction.amount}, new balance: {user.balance}")
                     
                     # Verify balance consistency
                     balance_check = verify_user_balance_consistency(user.id)
@@ -515,12 +522,12 @@ def mpesa_callback(request):
                         related_transaction_id=transaction.id
                     )
                     
-                    logger.info(f"✅ Payment successful for user {user.phone_number}, new balance: {user.balance}")
-                    
                 except TransactionError as e:
-                    logger.error(f"❌ Atomic transaction failed for deposit {transaction.id}: {str(e)}")
+                    logger.error(f"❌ Transaction processing failed for deposit {transaction.id}: {str(e)}")
                     transaction.status = 'FAILED'
-                    transaction.description = f"Atomic transaction error: {str(e)}"
+                    # Truncate error message to fit 200-char field
+                    error_msg = str(e)
+                    transaction.description = error_msg[:190] if len(error_msg) > 190 else error_msg
                     transaction.save()
                     # Notify user of processing issue
                     create_notification(
@@ -531,12 +538,21 @@ def mpesa_callback(request):
                         color_class='red',
                         related_transaction_id=transaction.id
                     )
+                except Exception as e:
+                    logger.error(f"❌ Unexpected error processing deposit {transaction.id}: {str(e)}")
+                    transaction.status = 'FAILED'
+                    # Truncate error message to fit 200-char field
+                    error_msg = str(e)
+                    transaction.description = error_msg[:190] if len(error_msg) > 190 else error_msg
+                    transaction.save()
             else:
                 # Payment failed - extract M-Pesa error message
                 result_desc = result.get('result_desc', 'Payment failed. Please try again.')
                 
                 transaction.status = 'FAILED'
-                transaction.description = f"M-Pesa error: {result_desc}"
+                # Truncate error message to fit 200-char field
+                full_msg = f"M-Pesa error: {result_desc}"
+                transaction.description = full_msg[:190] if len(full_msg) > 190 else full_msg
                 transaction.save()
                 
                 # Create notification
