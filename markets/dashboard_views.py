@@ -87,10 +87,13 @@ def user_dashboard(request):
             
             # Calculate portfolio value for open BUY positions (PENDING bets, exclude SELL)
             if bet.result == 'PENDING' and bet.action == 'BUY':
-                # Portfolio value = bet amount * current market probability
-                current_probability = Decimal(bet.market.yes_probability) if bet.outcome == 'Yes' else Decimal(100 - bet.market.yes_probability)
-                current_value = bet.amount * (current_probability / Decimal('100'))
-                portfolio_value += current_value
+                # Polymarket formula: value = amount * (100 / entry_probability)
+                # Entry probability is stored when the bet was placed
+                entry_prob = Decimal(bet.entry_probability)
+                if entry_prob > 0:
+                    multiplier = Decimal('100') / entry_prob
+                    current_value = bet.amount * multiplier
+                    portfolio_value += current_value
         
         # Get user statistics
         stats = user.get_user_statistics()
