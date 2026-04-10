@@ -7,6 +7,12 @@ from django.utils import timezone
 from decimal import Decimal
 from .mpesa_integration import get_mpesa_client
 from .models import Transaction
+from .transaction_safety import (
+    safe_process_deposit, 
+    safe_process_withdrawal,
+    verify_user_balance_consistency,
+    TransactionError
+)
 from api.validators import validate_amount, normalize_phone_number, ValidationError
 from users.models import CustomUser
 from notifications.views import create_notification
@@ -470,28 +476,61 @@ def mpesa_callback(request):
                 return JsonResponse({'error': 'Transaction not found'}, status=404)
             
             if result.get('status') == 'COMPLETED':
-                # Payment successful
-                transaction.status = 'COMPLETED'
-                transaction.receipt_number = result.get('receipt_number')
-                transaction.description = f"Deposit successful: KES {transaction.amount}"
-                transaction.save()
-                
-                # Update user balance
-                user = transaction.user
-                user.balance += transaction.amount
-                user.save()
-                
-                # Create notification
-                create_notification(
-                    user=user,
-                    type_choice='DEPOSIT_CONFIRMED',
-                    title='Deposit Confirmed',
-                    message=f'Your deposit of KES {transaction.amount} has been confirmed',
-                    color_class='green',
-                    related_transaction_id=transaction.id
-                )
-                
-                logger.info(f"✅ Payment successful for user {user.phone_number}, new balance: {user.balance}")
+                # Payment successful - use atomic transaction processing
+                try:
+                    user = transaction.user
+                    receipt_data = {
+                        'receipt_number': result.get('receipt_number'),
+                        'checkout_request_id': transaction.checkout_request_id,
+                    }
+                    
+                    # Create new atomic transaction that updates balance safely
+                    verified_txn = safe_process_deposit(
+                        user=user,
+                        amount=transaction.amount,
+                        external_ref=f"DEPOSIT-VERIFIED-{transaction.id}",
+                        transaction_type='DEPOSIT',
+                        mpesa_response=receipt_data,
+                        description=f"Deposit successful: KES {transaction.amount}",
+                        checkout_request_id=transaction.checkout_request_id
+                    )
+                    
+                    # Mark original pending transaction as completed
+                    transaction.status = 'COMPLETED'
+                    transaction.receipt_number = result.get('receipt_number')
+                    transaction.save()
+                    
+                    # Verify balance consistency
+                    balance_check = verify_user_balance_consistency(user.id)
+                    if not balance_check['is_consistent']:
+                        logger.warning(f"⚠️ Balance inconsistency detected after deposit: {balance_check}")
+                    
+                    # Create notification
+                    create_notification(
+                        user=user,
+                        type_choice='DEPOSIT_CONFIRMED',
+                        title='Deposit Confirmed',
+                        message=f'Your deposit of KES {transaction.amount} has been confirmed',
+                        color_class='green',
+                        related_transaction_id=transaction.id
+                    )
+                    
+                    logger.info(f"✅ Payment successful for user {user.phone_number}, new balance: {user.balance}")
+                    
+                except TransactionError as e:
+                    logger.error(f"❌ Atomic transaction failed for deposit {transaction.id}: {str(e)}")
+                    transaction.status = 'FAILED'
+                    transaction.description = f"Atomic transaction error: {str(e)}"
+                    transaction.save()
+                    # Notify user of processing issue
+                    create_notification(
+                        user=transaction.user,
+                        type_choice='DEPOSIT_FAILED',
+                        title='Deposit Processing Error',
+                        message='Your deposit was received but could not be credited. Please contact support.',
+                        color_class='red',
+                        related_transaction_id=transaction.id
+                    )
             else:
                 # Payment failed - extract M-Pesa error message
                 result_desc = result.get('result_desc', 'Payment failed. Please try again.')
