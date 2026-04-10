@@ -36,6 +36,11 @@ class Market(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_markets')
     is_live = models.BooleanField(default=True)  # Kept for backward compatibility
+    
+    # AMM (Automated Market Maker) fields
+    yes_reserve = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # YES share reserve in KES value
+    no_reserve = models.DecimalField(max_digits=15, decimal_places=2, default=0)   # NO share reserve in KES value
+    is_bootstrapped = models.BooleanField(default=False)  # Track if initial liquidity was added
 
     def __str__(self):
         return self.question
