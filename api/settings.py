@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'payments',
     'notifications',
     'support',
+    'audit',  # Audit trail & immutability
 ]
 
 
