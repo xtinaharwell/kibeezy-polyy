@@ -421,6 +421,61 @@ def place_bet(request):
 
 
 @csrf_exempt
+@require_http_methods(["GET"])
+def get_user_available_shares(request, market_id):
+    """Get available shares user owns for a specific market/outcome to auto-populate sell form."""
+    user = get_authenticated_user(request)
+    if not user:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    try:
+        market = Market.objects.get(id=market_id)
+    except Market.DoesNotExist:
+        return JsonResponse({'error': 'Market not found'}, status=404)
+    
+    outcome = request.GET.get('outcome')
+    if not outcome or outcome not in ['Yes', 'No']:
+        return JsonResponse({'error': 'Invalid outcome'}, status=400)
+    
+    option_id = request.GET.get('option_id')
+    
+    # Calculate available shares
+    filter_kwargs = {
+        'user': user,
+        'market': market,
+        'outcome': outcome,
+        'action': 'BUY',
+    }
+    if option_id:
+        filter_kwargs['option_id'] = option_id
+    
+    buy_quantity = Bet.objects.filter(**filter_kwargs).aggregate(
+        total=models.Sum('quantity')
+    )['total'] or 0
+    
+    sell_filter_kwargs = {
+        'user': user,
+        'market': market,
+        'outcome': outcome,
+        'action': 'SELL',
+    }
+    if option_id:
+        sell_filter_kwargs['option_id'] = option_id
+    
+    sell_quantity = Bet.objects.filter(**sell_filter_kwargs).aggregate(
+        total=models.Sum('quantity')
+    )['total'] or 0
+    
+    available_quantity = buy_quantity - sell_quantity
+    
+    return JsonResponse({
+        'available_quantity': max(0, available_quantity),
+        'buy_quantity': buy_quantity,
+        'sell_quantity': sell_quantity,
+    })
+
+
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def market_chat(request, market_id):
     """Chat messages for a single market."""
