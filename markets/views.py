@@ -5,6 +5,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal
 from .models import Market, Bet, ChatMessage
+from .amm import AMM
 from payments.models import Transaction
 from api.validators import validate_amount, validate_bet_outcome, ValidationError
 from users.models import CustomUser
@@ -77,8 +78,42 @@ def get_authenticated_user(request):
 
 
 def list_markets(request):
-    markets = Market.objects.all().values()
-    return JsonResponse(list(markets), safe=False)
+    markets = Market.objects.all()
+    markets_data = []
+    
+    for market in markets:
+        market_dict = {
+            'id': market.id,
+            'question': market.question,
+            'category': market.category,
+            'description': market.description,
+            'image_url': market.image_url,
+            'market_type': market.market_type,
+            'yes_probability': market.yes_probability,
+            'options': market.options,
+            'volume': market.volume,
+            'status': market.status,
+            'end_date': market.end_date,
+            'resolved_outcome': market.resolved_outcome,
+            'created_at': market.created_at.isoformat(),
+            'is_bootstrapped': market.is_bootstrapped,
+            'y_probability': market.yes_probability,
+            'no_probability': 100 - market.yes_probability,
+        }
+        
+        # Add multiplier info for easier UX
+        if market.yes_probability > 0 and market.yes_probability < 100:
+            market_dict['yes_multiplier'] = round(100 / market.yes_probability, 2)
+            market_dict['no_multiplier'] = round(100 / (100 - market.yes_probability), 2)
+        
+        # Add AMM reserve info if bootstrapped
+        if market.is_bootstrapped:
+            market_dict['yes_reserve'] = str(market.yes_reserve)
+            market_dict['no_reserve'] = str(market.no_reserve)
+        
+        markets_data.append(market_dict)
+    
+    return JsonResponse(markets_data, safe=False)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -225,14 +260,37 @@ def place_bet(request):
             related_bet_id=bet.id
         )
         
-        # Update probability for BINARY markets only
+        # Update probability using AMM if market has been bootstrapped
         if market.market_type == 'BINARY':
-            if outcome == 'Yes':
-                market.yes_probability = min(99, market.yes_probability + 1)
+            if market.is_bootstrapped and market.yes_reserve > 0 and market.no_reserve > 0:
+                # Use AMM for price update
+                try:
+                    amm = AMM(market.yes_reserve, market.no_reserve)
+                    buy_result = amm.calculate_buy_price(Decimal(str(amount)), outcome)
+                    
+                    # Update reserves based on the trade
+                    amm.update_reserves(outcome, Decimal(str(amount)), is_buy=(action == 'buy'))
+                    market.yes_reserve = amm.yes_reserve
+                    market.no_reserve = amm.no_reserve
+                    
+                    # Update probability for display
+                    market.yes_probability = max(1, min(99, int(buy_result['new_yes_probability'])))
+                except Exception as e:
+                    logger.error(f"AMM calculation error for market {market.id}: {str(e)}")
+                    # Fallback to fixed update
+                    if outcome == 'Yes':
+                        market.yes_probability = min(99, market.yes_probability + 1)
+                    else:
+                        market.yes_probability = max(1, market.yes_probability - 1)
             else:
-                market.yes_probability = max(1, market.yes_probability - 1)
+                # Market not bootstrapped, use fixed update
+                if outcome == 'Yes':
+                    market.yes_probability = min(99, market.yes_probability + 1)
+                else:
+                    market.yes_probability = max(1, market.yes_probability - 1)
         # For OPTION_LIST markets, update the specific option probability
         elif market.market_type == 'OPTION_LIST' and market.options:
+            # TODO: Implement AMM for OPTION_LIST markets
             for opt in market.options:
                 if opt.get('id') == option_id:
                     if outcome == 'Yes':
@@ -532,4 +590,73 @@ def get_price_history(request, market_id):
     except Exception as e:
         logger.error(f"Price history error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+@csrf_exempt
+def bootstrap_market_liquidity(request):
+    """
+    Bootstrap a market with initial AMM liquidity (Admin only).
+    Creates equal reserves for YES and NO outcomes.
+    
+    POST /api/markets/bootstrap/
+    {
+        "market_id": 1,
+        "liquidity_amount": 100000,  # Total liquidity to add (50k YES, 50k NO)
+        "admin_key": "secret_key"    # Admin authentication
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        market_id = data.get('market_id')
+        liquidity_amount = data.get('liquidity_amount')
+        admin_key = data.get('admin_key')
+        
+        # Verify admin
+        if admin_key != 'your_admin_secret_key':  # TODO: Use proper admin authentication
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+        if not market_id or not liquidity_amount:
+            return JsonResponse({'error': 'market_id and liquidity_amount required'}, status=400)
+        
+        try:
+            liquidity = Decimal(str(liquidity_amount))
+            if liquidity <= 0:
+                return JsonResponse({'error': 'Liquidity amount must be positive'}, status=400)
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid liquidity amount'}, status=400)
+        
+        market = Market.objects.get(id=market_id)
+        
+        # Check if already bootstrapped
+        if market.is_bootstrapped:
+            return JsonResponse({'error': 'Market already bootstrapped'}, status=400)
+        
+        # Initialize equal reserves (50/50 split)
+        half_liquidity = liquidity / Decimal('2')
+        market.yes_reserve = half_liquidity
+        market.no_reserve = half_liquidity
+        market.is_bootstrapped = True
+        market.yes_probability = 50  # Set initial price to 50%
+        market.save()
+        
+        logger.info(f"Bootstrapped market {market_id} with {liquidity} KES liquidity")
+        
+        return JsonResponse({
+            'status': 'success',
+            'market_id': market.id,
+            'liquidity_amount': str(liquidity),
+            'yes_reserve': str(market.yes_reserve),
+            'no_reserve': str(market.no_reserve),
+            'initial_price': 50,
+            'message': f'Market bootstrapped with {liquidity} KES'
+        })
+    except Market.DoesNotExist:
+        return JsonResponse({'error': 'Market not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Bootstrap error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
 
