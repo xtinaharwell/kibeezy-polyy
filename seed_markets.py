@@ -9,69 +9,65 @@ from markets.models import Market
 def seed():
     markets = [
         {
-            "question": "Will William Ruto be re-elected in 2027?",
-            "category": "Politics",
-            "yes_probability": 45,
-            "volume": "KES 1.2M",
-            "end_date": "Aug 2027",
-            "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/William_Ruto_2023.jpg/440px-William_Ruto_2023.jpg"
-        },
-        {
-            "question": "Will the Central Bank of Kenya lower the base rate by June?",
-            "category": "Economy",
-            "yes_probability": 68,
-            "volume": "KES 450K",
-            "end_date": "Jun 30, 2026",
-            "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Central_Bank_of_Kenya_building.jpg/500px-Central_Bank_of_Kenya_building.jpg"
-        },
-        {
-            "question": "Will Eliud Kipchoge win his next major marathon?",
+            "question": "Chelsea vs Manchester City - Premier League",
             "category": "Sports",
-            "yes_probability": 72,
-            "volume": "KES 890K",
-            "end_date": "Apr 15, 2026",
-            "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Eliud_Kipchoge_after_2018_Berlin_Marathon.jpg/440px-Eliud_Kipchoge_after_2018_Berlin_Marathon.jpg"
-        },
-        {
-            "question": "Will Nairobi receive above-average rainfall in March 2026?",
-            "category": "Environment",
-            "yes_probability": 55,
-            "volume": "KES 120K",
-            "end_date": "Mar 31, 2026",
-            "image_url": "https://images.unsplash.com/photo-1549417229-aa67d3263c09?q=80&w=1000&auto=format&fit=crop"
-        },
-        {
-            "question": "Will Kenya launch its own Digital Currency (CBDC) by 2027?",
-            "category": "Crypto",
-            "yes_probability": 30,
-            "volume": "KES 210K",
-            "end_date": "Dec 31, 2026",
-            "image_url": "https://images.unsplash.com/photo-1621761191319-c6fb62004040?q=80&w=1000&auto=format&fit=crop"
-        },
-        {
-            "question": "Will Majembe win against Vunja Mbavu Destroyer?",
-            "category": "Sports",
-            "yes_probability": 58,
-            "volume": "KES 500K",
-            "end_date": "Apr 4, 2026",
-            "description": "Celebrity boxing match between Majembe (known for technical finesse and sharp footwork) and Vunja Mbavu Destroyer (viral personality with aggressive energy and 'weka mawe' catchphrase). Event held in Nairobi, Kenya. Prize pool: KES 1M with government backing. Both fighters are amateur boxers turned viral sensations with significant public following.",
-            "image_url": "https://images.unsplash.com/photo-1549988534-f81534c79311?q=80&w=1000&auto=format&fit=crop"
+            "market_type": "OPTION_LIST",
+            "volume": "KES 0",
+            "end_date": "Apr 12, 2026, 4:30pm",
+            "description": "Premier League match: Chelsea vs Manchester City at Stamford Bridge. Kickoff: 4:30pm GMT, Sunday 12th April 2026.",
+            "image_url": "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?q=80&w=1000&auto=format&fit=crop",
+            "options": [
+                {"label": "Chelsea Win", "yes_probability": 35},
+                {"label": "Draw", "yes_probability": 30},
+                {"label": "Manchester City Win", "yes_probability": 35}
+            ]
         }
     ]
 
     for m in markets:
-        market, created = Market.objects.update_or_create(
-            question=m['question'],
-            defaults={
-                'category': m['category'],
-                'yes_probability': m['yes_probability'],
-                'volume': m['volume'],
-                'end_date': m['end_date'],
-                'description': m.get('description', ''),
-                'image_url': m['image_url'],
-                'is_live': True
-            }
-        )
+        question = m['question']
+        market_type = m.get('market_type', 'BINARY')
+        
+        if market_type == 'OPTION_LIST':
+            # For OPTION_LIST markets, format options properly
+            options_data = []
+            for idx, opt in enumerate(m.get('options', [])):
+                options_data.append({
+                    'id': idx + 1,
+                    'label': opt['label'],
+                    'yes_probability': opt['yes_probability'],
+                    'no_probability': 100 - opt['yes_probability']
+                })
+            market, created = Market.objects.update_or_create(
+                question=question,
+                defaults={
+                    'category': m['category'],
+                    'yes_probability': 50,  # Not used for OPTION_LIST
+                    'volume': m['volume'],
+                    'end_date': m['end_date'],
+                    'description': m.get('description', ''),
+                    'image_url': m['image_url'],
+                    'market_type': 'OPTION_LIST',
+                    'options': options_data,
+                    'is_live': True
+                }
+            )
+        else:
+            # For BINARY markets
+            market, created = Market.objects.update_or_create(
+                question=question,
+                defaults={
+                    'category': m['category'],
+                    'yes_probability': m['yes_probability'],
+                    'volume': m['volume'],
+                    'end_date': m['end_date'],
+                    'description': m.get('description', ''),
+                    'image_url': m['image_url'],
+                    'market_type': 'BINARY',
+                    'is_live': True
+                }
+            )
+        
         if created:
             print(f"Created market: {market.question}")
         else:
