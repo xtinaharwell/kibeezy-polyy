@@ -78,7 +78,7 @@ class Bet(models.Model):
     order_type = models.CharField(max_length=10, choices=ORDER_TYPE_CHOICES, default='MARKET')
     limit_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     order_status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='FILLED')  # FILLED for market orders, PENDING for limit orders
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.DecimalField(max_digits=15, decimal_places=8, default=1)  # Support fractional shares
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='PENDING')
     payout = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     action = models.CharField(max_length=10, choices=ACTION_CHOICES, default='BUY')

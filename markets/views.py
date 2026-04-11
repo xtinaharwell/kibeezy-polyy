@@ -203,6 +203,16 @@ def place_bet(request):
             except ValidationError as e:
                 return JsonResponse({'error': e.message}, status=400)
         
+        # For MARKET orders with amounts, calculate fractional shares
+        calculated_quantity = Decimal(str(quantity))
+        if order_type == 'MARKET' and market.market_type == 'BINARY':
+            # Calculate shares based on amount and current probability
+            current_price = Decimal(str(entry_probability))
+            if current_price > 0:
+                calculated_quantity = amount / current_price
+            else:
+                calculated_quantity = Decimal('1')
+        
         # Handle balance for MARKET orders only (LIMIT orders don't deduct balance immediately)
         if order_type == 'MARKET':
             if action == 'buy':
@@ -283,7 +293,7 @@ def place_bet(request):
             option_label=option_label,
             order_type=order_type,
             limit_price=limit_price,
-            quantity=quantity,
+            quantity=calculated_quantity,
             action=action.upper(),
             order_status=order_status,
         )
