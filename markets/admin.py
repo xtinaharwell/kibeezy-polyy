@@ -1,17 +1,58 @@
 from django.contrib import admin
 from django.utils.safestring import mark_safe
+from django import forms
 from decimal import Decimal
 from .models import Market, Bet, PriceHistory, ChatMessage
 from .amm import AMM
 
 
+class MarketAdminForm(forms.ModelForm):
+    """Custom form for Market admin with bootstrap liquidity amount field"""
+    liquidity_amount = forms.DecimalField(
+        required=False,
+        initial=100000,
+        help_text="Total liquidity to bootstrap (will be split 50/50 between YES and NO). Only used when is_bootstrapped is checked.",
+        widget=forms.NumberInput(attrs={'min': 1000, 'step': 1000})
+    )
+    
+    class Meta:
+        model = Market
+        fields = '__all__'
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set initial liquidity amount if market is already bootstrapped
+        if self.instance and self.instance.is_bootstrapped and self.instance.yes_reserve:
+            self.fields['liquidity_amount'].initial = (self.instance.yes_reserve + self.instance.no_reserve) * 2
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        
+        # Handle bootstrap logic
+        if self.cleaned_data.get('is_bootstrapped') and not instance.is_bootstrapped:
+            # Market is being bootstrapped for the first time
+            liquidity_amount = self.cleaned_data.get('liquidity_amount') or Decimal('100000')
+            liquidity = Decimal(str(liquidity_amount))
+            
+            if liquidity > 0:
+                half_liquidity = liquidity / Decimal('2')
+                instance.yes_reserve = half_liquidity
+                instance.no_reserve = half_liquidity
+                instance.yes_probability = 50
+        
+        if commit:
+            instance.save()
+        return instance
+
+
 @admin.register(Market)
 class MarketAdmin(admin.ModelAdmin):
+    form = MarketAdminForm
+    
     list_display = ('question', 'category', 'status', 'market_type', 'yes_probability', 'volume', 'bootstrap_status', 'created_at')
     list_filter = ('status', 'category', 'market_type', 'is_bootstrapped', 'created_at')
     search_fields = ('question', 'description')
-    readonly_fields = ('created_at', 'amm_status_display', 'amm_reserves_display', 'is_bootstrapped')
-    actions = ['bootstrap_market_action']
+    readonly_fields = ('created_at', 'amm_status_display', 'amm_reserves_display')
     
     fieldsets = (
         ('Market Info', {
@@ -24,13 +65,14 @@ class MarketAdmin(admin.ModelAdmin):
             'fields': ('status', 'end_date', 'created_at', 'resolved_at', 'resolved_outcome')
         }),
         ('AMM Configuration', {
-            'fields': ('is_bootstrapped', 'amm_status_display', 'yes_reserve', 'no_reserve', 'amm_reserves_display'),
-            'classes': ('collapse',)
+            'fields': ('is_bootstrapped', 'liquidity_amount', 'amm_status_display', 'yes_reserve', 'no_reserve', 'amm_reserves_display'),
+            'description': 'Check "is_bootstrapped" and set a liquidity amount to initialize AMM for this market. The amount will be split 50/50 between YES and NO reserves.'
         }),
         ('Statistics', {
             'fields': ('volume',)
         }),
     )
+    
     date_hierarchy = 'created_at'
     
     def bootstrap_status(self, obj):
@@ -72,34 +114,6 @@ class MarketAdmin(admin.ModelAdmin):
             return mark_safe(html)
         return "Not bootstrapped"
     amm_reserves_display.short_description = 'Reserve Details'
-    
-    def bootstrap_market_action(self, request, queryset):
-        """Admin action to bootstrap markets"""
-        bootstrapped_count = 0
-        skipped_count = 0
-        
-        for market in queryset:
-            if market.is_bootstrapped:
-                skipped_count += 1
-                continue
-            
-            # Bootstrap with default 100K liquidity (50K YES, 50K NO)
-            liquidity = Decimal('100000')
-            half_liquidity = liquidity / Decimal('2')
-            
-            market.yes_reserve = half_liquidity
-            market.no_reserve = half_liquidity
-            market.is_bootstrapped = True
-            market.yes_probability = 50
-            market.save()
-            bootstrapped_count += 1
-        
-        if bootstrapped_count > 0:
-            self.message_user(request, f'Successfully bootstrapped {bootstrapped_count} market(s) with 100K KES liquidity.')
-        if skipped_count > 0:
-            self.message_user(request, f'{skipped_count} market(s) were already bootstrapped.', level='WARNING')
-    
-    bootstrap_market_action.short_description = 'Bootstrap selected markets with 100K KES liquidity'
 
 
 @admin.register(Bet)
