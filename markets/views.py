@@ -149,6 +149,12 @@ def place_bet(request):
         except Market.DoesNotExist:
             return JsonResponse({'error': 'Market not found'}, status=404)
         
+        # Check if market is bootstrapped for trading
+        if not market.is_bootstrapped or market.yes_reserve <= 0 or market.no_reserve <= 0:
+            return JsonResponse({
+                'error': 'This market is not yet active for trading. It will be bootstrapped with liquidity soon.'
+            }, status=400)
+        
         # Check if market is open
         if market.status != 'OPEN':
             return JsonResponse({'error': f'Market is {market.status.lower()}'}, status=400)
@@ -339,6 +345,7 @@ def place_bet(request):
         )
         
         # Update probability using AMM if market has been bootstrapped
+        # ONLY bootstrapped markets have price movements
         if market.market_type == 'BINARY':
             if market.is_bootstrapped and market.yes_reserve > 0 and market.no_reserve > 0:
                 # Use AMM for price update
@@ -355,29 +362,22 @@ def place_bet(request):
                     market.yes_probability = max(1, min(99, int(buy_result['new_yes_probability'])))
                 except Exception as e:
                     logger.error(f"AMM calculation error for market {market.id}: {str(e)}")
-                    # Fallback to fixed update
-                    if outcome == 'Yes':
-                        market.yes_probability = min(99, market.yes_probability + 1)
-                    else:
-                        market.yes_probability = max(1, market.yes_probability - 1)
-            else:
-                # Market not bootstrapped, use fixed update
-                if outcome == 'Yes':
-                    market.yes_probability = min(99, market.yes_probability + 1)
-                else:
-                    market.yes_probability = max(1, market.yes_probability - 1)
-        # For OPTION_LIST markets, update the specific option probability
+                    # No fallback - market not moved if AMM fails
+            # Non-bootstrapped markets don't move at all
+        # For OPTION_LIST markets, update the specific option probability ONLY if bootstrapped
         elif market.market_type == 'OPTION_LIST' and market.options:
-            # TODO: Implement AMM for OPTION_LIST markets
-            for opt in market.options:
-                if opt.get('id') == option_id:
-                    if outcome == 'Yes':
-                        opt['yes_probability'] = min(99, opt.get('yes_probability', 50) + 1)
-                    else:
-                        opt['no_probability'] = min(99, opt.get('no_probability', 50) + 1)
-                        opt['yes_probability'] = 100 - opt['no_probability']
-                    break
-            market.options = market.options  # Trigger update
+            if market.is_bootstrapped:
+                # TODO: Implement AMM for OPTION_LIST markets
+                for opt in market.options:
+                    if opt.get('id') == option_id:
+                        if outcome == 'Yes':
+                            opt['yes_probability'] = min(99, opt.get('yes_probability', 50) + 1)
+                        else:
+                            opt['no_probability'] = min(99, opt.get('no_probability', 50) + 1)
+                            opt['yes_probability'] = 100 - opt['no_probability']
+                        break
+                market.options = market.options  # Trigger update
+            # Non-bootstrapped OPTION_LIST markets don't move at all
 
         current_volume = parse_volume_value(market.volume)
         market.volume = format_volume_value(current_volume + int(amount))
@@ -759,19 +759,12 @@ def preview_trade_price(request):
         
         # Check if market is bootstrapped for AMM pricing
         if not market.is_bootstrapped or market.yes_reserve <= 0 or market.no_reserve <= 0:
-            # Not using AMM - return current probability
-            current_prob = market.yes_probability if outcome == 'Yes' else (100 - market.yes_probability)
+            # Market must be bootstrapped to trade
             return JsonResponse({
+                'error': 'This market is not yet active for trading. It will be bootstrapped with liquidity soon.',
                 'market_id': market.id,
-                'outcome': outcome,
-                'amount': str(amount),
-                'current_probability': current_prob,
-                'execution_price': current_prob,
-                'new_probability': current_prob,
-                'price_impact': 0,
                 'is_amm': False,
-                'message': 'Market not using AMM pricing, showing current probability'
-            })
+            }, status=400)
         
         # Use AMM for pricing
         try:
