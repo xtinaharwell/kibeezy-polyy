@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from decimal import Decimal
 from .models import Market, Bet, PriceHistory, ChatMessage
 from .amm import AMM
@@ -36,10 +36,10 @@ class MarketAdmin(admin.ModelAdmin):
     def bootstrap_status(self, obj):
         """Display bootstrap status with colored indicator"""
         if obj.is_bootstrapped:
-            return format_html(
+            return mark_safe(
                 '<span style="color: green; font-weight: bold;">✓ Bootstrapped</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="color: red; font-weight: bold;">✗ Not Bootstrapped</span>'
         )
     bootstrap_status.short_description = 'Bootstrap Status'
@@ -53,24 +53,23 @@ class MarketAdmin(admin.ModelAdmin):
             try:
                 amm = AMM(obj.yes_reserve, obj.no_reserve)
                 current_price = amm.get_current_price()
-                return format_html(
-                    '<div><strong>Active</strong><br/>Current Price: {:.1f}%</div>',
-                    current_price
+                return mark_safe(
+                    '<div><strong>Active</strong><br/>Current Price: {:.1f}%</div>'.format(current_price)
                 )
             except Exception as e:
-                return format_html(f'<span style="color: red;">Error: {str(e)}</span>')
+                return mark_safe('<span style="color: red;">Error: {}</span>'.format(str(e)))
         return "Reserves not properly initialized"
     amm_status_display.short_description = 'AMM Status'
     
     def amm_reserves_display(self, obj):
         """Display AMM reserves"""
         if obj.is_bootstrapped:
-            return format_html(
-                '<div>YES Reserve: <strong>{}</strong> KES<br/>NO Reserve: <strong>{}</strong> KES<br/>Product (k): <strong>{}</strong></div>',
+            html = '<div>YES Reserve: <strong>{}</strong> KES<br/>NO Reserve: <strong>{}</strong> KES<br/>Product (k): <strong>{}</strong></div>'.format(
                 float(obj.yes_reserve),
                 float(obj.no_reserve),
                 float(obj.yes_reserve * obj.no_reserve) if obj.yes_reserve > 0 and obj.no_reserve > 0 else 0
             )
+            return mark_safe(html)
         return "Not bootstrapped"
     amm_reserves_display.short_description = 'Reserve Details'
     
