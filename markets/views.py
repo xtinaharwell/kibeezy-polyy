@@ -831,22 +831,21 @@ def bootstrap_market_liquidity(request):
     POST /api/markets/bootstrap/
     {
         "market_id": 1,
-        "liquidity_amount": 100000,  # Total liquidity to add (50k YES, 50k NO)
-        "admin_key": "secret_key"    # Admin authentication
+        "liquidity_amount": 100000  # Total liquidity to add (50k YES, 50k NO)
     }
     """
     try:
         data = json.loads(request.body)
         market_id = data.get('market_id')
-        liquidity_amount = data.get('liquidity_amount')
-        admin_key = data.get('admin_key')
+        liquidity_amount = data.get('liquidity_amount', 100000)  # Default to 100K if not provided
         
-        # Verify admin
-        if admin_key != 'your_admin_secret_key':  # TODO: Use proper admin authentication
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        # Check if user is authenticated and is staff/admin
+        user = get_authenticated_user(request)
+        if not user or not (user.is_staff or user.is_superuser):
+            return JsonResponse({'error': 'Unauthorized - admin access required'}, status=403)
         
-        if not market_id or not liquidity_amount:
-            return JsonResponse({'error': 'market_id and liquidity_amount required'}, status=400)
+        if not market_id:
+            return JsonResponse({'error': 'market_id required'}, status=400)
         
         try:
             liquidity = Decimal(str(liquidity_amount))
