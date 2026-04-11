@@ -3,6 +3,7 @@ import logging
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
+from django.db import models
 from decimal import Decimal
 from .models import Market, Bet, ChatMessage
 from .amm import AMM
@@ -186,7 +187,32 @@ def place_bet(request):
                 return JsonResponse({'error': f'Insufficient balance. Available: KES {user.balance}'}, status=400)
             # Deduct from balance
             user.balance -= amount
-        else:  # sell
+        else:  # sell - must validate user owns these shares
+            # Calculate available shares to sell for this market/outcome
+            buy_quantity = Bet.objects.filter(
+                user=user,
+                market=market,
+                outcome=outcome,
+                action='BUY',
+                option_id=option_id
+            ).aggregate(total=models.Sum('quantity'))['total'] or 0
+            
+            sell_quantity = Bet.objects.filter(
+                user=user,
+                market=market,
+                outcome=outcome,
+                action='SELL',
+                option_id=option_id
+            ).aggregate(total=models.Sum('quantity'))['total'] or 0
+            
+            available_quantity = buy_quantity - sell_quantity
+            
+            # Check if user is trying to sell more than they own
+            if amount > Decimal(str(available_quantity)):
+                return JsonResponse({
+                    'error': f'Cannot sell {amount} shares. You only own {available_quantity} shares of {outcome} on this market.'
+                }, status=400)
+            
             # Add to balance (proceeds from selling)
             user.balance += amount
         
