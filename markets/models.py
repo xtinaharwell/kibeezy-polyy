@@ -57,6 +57,13 @@ class Bet(models.Model):
         ('SELL', 'Sell'),
     ]
     
+    ORDER_STATUS_CHOICES = [
+        ('PENDING', 'Pending'),  # Limit order waiting to be filled
+        ('FILLED', 'Filled'),    # Order has been executed
+        ('CANCELLED', 'Cancelled'),  # User cancelled
+        ('EXPIRED', 'Expired'),   # Market closed before order was filled
+    ]
+    
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bets')
     market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name='bets')
     outcome = models.CharField(max_length=10, choices=[('Yes', 'Yes'), ('No', 'No')])
@@ -70,11 +77,13 @@ class Bet(models.Model):
     ]
     order_type = models.CharField(max_length=10, choices=ORDER_TYPE_CHOICES, default='MARKET')
     limit_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    order_status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='FILLED')  # FILLED for market orders, PENDING for limit orders
     quantity = models.PositiveIntegerField(default=1)
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='PENDING')
     payout = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     action = models.CharField(max_length=10, choices=ACTION_CHOICES, default='BUY')
     timestamp = models.DateTimeField(auto_now_add=True)
+    filled_at = models.DateTimeField(null=True, blank=True)  # When limit order was filled
     
     def __str__(self):
         return f"{self.user.phone_number} - {self.market.question} - {self.outcome}"

@@ -14,6 +14,12 @@ from pathlib import Path
 import os
 from decouple import config
 
+# Try to import crontab for Celery Beat schedule
+try:
+    from celery.schedules import crontab
+except ImportError:
+    crontab = None
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -247,4 +253,23 @@ MPESA_CALLBACK_URL = config('MPESA_CALLBACK_URL', default='https://CACHE.app/api
 # Payout settings
 PAYOUT_PLATFORM_FEE_PCT = config('PAYOUT_PLATFORM_FEE_PCT', default='5.00')
 PAYOUT_MIN_AMOUNT = config('PAYOUT_MIN_AMOUNT', default='10')  # KES
+
+
+# ============================================================================
+# CELERY BEAT SCHEDULE (Periodic Tasks)
+# ============================================================================
+
+if crontab is not None:
+    CELERY_BEAT_SCHEDULE = {
+        'match-limit-orders': {
+            'task': 'markets.tasks.match_limit_orders',
+            'schedule': crontab(),  # Run every minute
+        },
+        'expire-unmatched-limit-orders': {
+            'task': 'markets.tasks.expire_unmatched_limit_orders',
+            'schedule': crontab(minute=0),  # Run every hour at minute 0
+        },
+    }
+else:
+    CELERY_BEAT_SCHEDULE = {}
 
