@@ -594,6 +594,102 @@ def get_price_history(request, market_id):
 
 @require_http_methods(["POST"])
 @csrf_exempt
+def preview_trade_price(request):
+    """
+    Preview the execution price and slippage for a trade without placing it.
+    
+    POST /api/markets/preview-price/
+    {
+        "market_id": 1,
+        "outcome": "Yes",
+        "amount": 5000,
+        "action": "buy"  // or "sell"
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        market_id = data.get('market_id')
+        outcome = data.get('outcome')
+        amount = data.get('amount')
+        action = data.get('action', 'buy').lower()
+        
+        if not all([market_id, outcome, amount]):
+            return JsonResponse({'error': 'Missing: market_id, outcome, amount'}, status=400)
+        
+        try:
+            outcome = validate_bet_outcome(outcome)
+            amount = validate_amount(amount, min_amount=Decimal('1'), max_amount=Decimal('100000'))
+        except ValidationError as e:
+            return JsonResponse({'error': e.message}, status=400)
+        
+        market = Market.objects.get(id=market_id)
+        
+        # Check if market is bootstrapped for AMM pricing
+        if not market.is_bootstrapped or market.yes_reserve <= 0 or market.no_reserve <= 0:
+            # Not using AMM - return current probability
+            current_prob = market.yes_probability if outcome == 'Yes' else (100 - market.yes_probability)
+            return JsonResponse({
+                'market_id': market.id,
+                'outcome': outcome,
+                'amount': str(amount),
+                'current_probability': current_prob,
+                'execution_price': current_prob,
+                'new_probability': current_prob,
+                'price_impact': 0,
+                'is_amm': False,
+                'message': 'Market not using AMM pricing, showing current probability'
+            })
+        
+        # Use AMM for pricing
+        try:
+            amm = AMM(market.yes_reserve, market.no_reserve)
+            
+            if action == 'buy':
+                result = amm.calculate_buy_price(amount, outcome)
+                return JsonResponse({
+                    'market_id': market.id,
+                    'outcome': outcome,
+                    'amount': str(amount),
+                    'action': 'buy',
+                    'current_probability': amm.get_current_price() if outcome == 'Yes' else (100 - amm.get_current_price()),
+                    'execution_price': result['execution_price'],
+                    'new_probability': result['new_yes_probability'] if outcome == 'Yes' else (100 - result['new_yes_probability']),
+                    'price_impact': result['price_impact'],
+                    'shares_received': result['shares_received'],
+                    'is_amm': True,
+                    'message': f"You'll receive {result['shares_received']} shares at {result['execution_price']}% execution price"
+                })
+            else:  # sell
+                shares_to_sell = amount  # For sell preview, amount is in shares
+                result = amm.calculate_sell_price(amount, outcome)
+                return JsonResponse({
+                    'market_id': market.id,
+                    'outcome': outcome,
+                    'shares': str(shares_to_sell),
+                    'action': 'sell',
+                    'current_probability': amm.get_current_price() if outcome == 'Yes' else (100 - amm.get_current_price()),
+                    'execution_price': result['execution_price'],
+                    'new_probability': result['new_yes_probability'] if outcome == 'Yes' else (100 - result['new_yes_probability']),
+                    'price_impact': result['price_impact'],
+                    'proceeds_kES': result['proceeds'],
+                    'is_amm': True,
+                    'message': f"You'll receive {result['proceeds']} KES for {shares_to_sell} shares"
+                })
+        except Exception as e:
+            logger.error(f"AMM preview error: {str(e)}")
+            return JsonResponse({'error': f'Price calculation error: {str(e)}'}, status=500)
+    
+    except Market.DoesNotExist:
+        return JsonResponse({'error': 'Market not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Price preview error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+@csrf_exempt
 def bootstrap_market_liquidity(request):
     """
     Bootstrap a market with initial AMM liquidity (Admin only).
