@@ -143,6 +143,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # LOGGING CONFIGURATION (for security auditing and debugging)
 # ============================================================================
 
+# Determine if we can write to filesystem (not on Vercel/serverless)
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+CAN_WRITE_LOGS = os.path.exists(LOGS_DIR) or (os.access(BASE_DIR, os.W_OK) and DEBUG is False)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -174,10 +178,16 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
+    } if not CAN_WRITE_LOGS else {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
         'security_file': {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'security.log'),
+            'filename': os.path.join(LOGS_DIR, 'security.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10MB
             'backupCount': 10,
             'formatter': 'security',
@@ -185,7 +195,7 @@ LOGGING = {
         'audit_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'audit.log'),
+            'filename': os.path.join(LOGS_DIR, 'audit.log'),
             'maxBytes': 1024 * 1024 * 50,  # 50MB
             'backupCount': 20,
             'formatter': 'audit',
@@ -193,7 +203,7 @@ LOGGING = {
         'database_file': {
             'level': 'DEBUG',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'database.log'),
+            'filename': os.path.join(LOGS_DIR, 'database.log'),
             'maxBytes': 1024 * 1024 * 100,  # 100MB
             'backupCount': 5,
             'formatter': 'verbose',
@@ -201,40 +211,37 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console'] if not CAN_WRITE_LOGS else ['console'],
             'level': 'INFO',
             'propagate': False,
         },
         'django.security': {
-            'handlers': ['security_file', 'console'],
+            'handlers': ['console'] if not CAN_WRITE_LOGS else ['security_file', 'console'],
             'level': 'WARNING',
             'propagate': False,
         },
         'audit': {
-            'handlers': ['audit_file', 'console'],
+            'handlers': ['console'] if not CAN_WRITE_LOGS else ['audit_file', 'console'],
             'level': 'INFO',
             'propagate': False,
         },
         'api.audit_logging': {
-            'handlers': ['audit_file'],
+            'handlers': ['console'] if not CAN_WRITE_LOGS else ['audit_file'],
             'level': 'INFO',
             'propagate': False,
         },
         'api.rate_limiting': {
-            'handlers': ['security_file'],
+            'handlers': ['console'] if not CAN_WRITE_LOGS else ['security_file'],
             'level': 'WARNING',
             'propagate': False,
         },
         'django.db.backends': {
-            'handlers': ['database_file'],
+            'handlers': ['console'] if not CAN_WRITE_LOGS else ['database_file'],
             'level': 'DEBUG',
             'propagate': False,
         },
     },
 }
-
-# Create logs directory if it doesn't exist
-os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.1/topics/i18n/
