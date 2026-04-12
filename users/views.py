@@ -57,7 +57,9 @@ def signup_view(request):
             'user': {
                 'phone_number': user.phone_number, 
                 'full_name': user.full_name,
-                'id': user.id
+                'id': user.id,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
             }
         }, status=201)
     except json.JSONDecodeError:
@@ -107,6 +109,8 @@ def login_view(request):
                     'kyc_verified': user.kyc_verified,
                     'phone_locked': user.phone_locked,
                     'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                    'is_staff': user.is_staff,
+                    'is_superuser': user.is_superuser,
                 },
                 'csrf_token': csrf_token
             })
@@ -140,6 +144,8 @@ def check_auth(request):
                 'balance': str(request.user.balance),
                 'kyc_verified': request.user.kyc_verified,
                 'date_joined': request.user.date_joined.isoformat() if request.user.date_joined else None,
+                'is_staff': request.user.is_staff,
+                'is_superuser': request.user.is_superuser,
             }
         })
     else:
@@ -225,6 +231,8 @@ def update_profile_view(request):
                 'balance': str(user.balance),
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 'phone_locked': user.phone_locked,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
             }
         })
     except json.JSONDecodeError:
@@ -478,6 +486,8 @@ def google_auth_view(request):
                 'phone_locked': user.phone_locked,
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 'picture': user.picture,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
             }
         }, status=200)
         
@@ -553,6 +563,8 @@ def add_phone_number_view(request):
                 'phone_locked': user.phone_locked,
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
                 'picture': user.picture,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
             }
         }, status=200)
     

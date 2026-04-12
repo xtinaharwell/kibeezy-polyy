@@ -44,32 +44,32 @@ class AMM:
             
         Returns:
             {
-                'shares_received': float, # Shares bought
-                'execution_price': float, # Average price paid (0-100)
+                'shares_received': float, # Shares bought (calculated from opposite reserve change)
+                'execution_price': float, # Weighted average price paid (0-100 as probability %)
                 'new_yes_probability': float, # Price after trade
                 'price_impact': float, # % price change
             }
         """
         amount = Decimal(str(amount))
+        current_prob = Decimal(str(self.get_current_price()))
         
         if outcome.lower() == "yes":
             # Buying YES shares
+            # You add collateral to YES, withdraw from NO
+            old_no_reserve = self.no_reserve
             new_yes_reserve = self.yes_reserve + amount
-            # k = yes_reserve * no_reserve, so no_reserve = k / yes_reserve
             new_no_reserve = self.k / new_yes_reserve
             
-            # Shares received = difference in YES reserve
-            shares_received = new_yes_reserve - self.yes_reserve
-            
-            # Execution price = total KES spent / shares received
-            execution_price = (amount / shares_received) * 100 if shares_received > 0 else 0
+            # Shares received = reduction in NO reserve (what you extract from the pool)
+            shares_received = old_no_reserve - new_no_reserve
             
             # New probability
             total_new = new_yes_reserve + new_no_reserve
             new_prob = (new_yes_reserve / total_new) * 100 if total_new > 0 else 50
             
-            # Current price before trade
-            current_prob = Decimal(str(self.get_current_price()))
+            # Execution price = weighted average price between old and new
+            execution_price = (current_prob + Decimal(str(new_prob))) / Decimal('2')
+            
             price_impact = (new_prob - current_prob)
             
             return {
@@ -79,22 +79,27 @@ class AMM:
                 'price_impact': float(price_impact.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             }
         else:
-            # Buying NO shares (equivalent to selling YES)
+            # Buying NO shares
+            old_yes_reserve = self.yes_reserve
             new_no_reserve = self.no_reserve + amount
             new_yes_reserve = self.k / new_no_reserve
             
-            shares_received = new_no_reserve - self.no_reserve
-            execution_price = (amount / shares_received) * 100 if shares_received > 0 else 0
+            # Shares received = reduction in YES reserve
+            shares_received = old_yes_reserve - new_yes_reserve
             
+            # New probability
             total_new = new_yes_reserve + new_no_reserve
             new_prob = (new_yes_reserve / total_new) * 100 if total_new > 0 else 50
             
-            current_prob = Decimal(str(self.get_current_price()))
+            # Execution price for NO = 100% - average of YES probabilities
+            yes_execution_price = (current_prob + Decimal(str(new_prob))) / Decimal('2')
+            execution_price = Decimal('100') - yes_execution_price
+            
             price_impact = (new_prob - current_prob)
             
             return {
                 'shares_received': float(shares_received.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
-                'execution_price': float((100 - execution_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'execution_price': float(execution_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
                 'new_yes_probability': float(new_prob.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
                 'price_impact': float(price_impact.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             }
@@ -110,12 +115,13 @@ class AMM:
         Returns:
             {
                 'proceeds': float, # KES received
-                'execution_price': float, # Average price received (0-100)
+                'execution_price': float, # Average price received (0-100 as probability %)
                 'new_yes_probability': float, # Price after trade
                 'price_impact': float, # % price change
             }
         """
         shares = Decimal(str(shares))
+        current_prob = Decimal(str(self.get_current_price()))
         
         if outcome.lower() == "yes":
             # Selling YES shares (reducing YES reserve)
@@ -125,17 +131,16 @@ class AMM:
             
             new_no_reserve = self.k / new_yes_reserve
             
-            # Proceeds = difference in NO reserve
+            # Proceeds = difference in NO reserve (what you receive from the pool)
             proceeds = new_no_reserve - self.no_reserve
-            
-            # Execution price
-            execution_price = (proceeds / shares) * 100 if shares > 0 else 0
             
             # New probability
             total_new = new_yes_reserve + new_no_reserve
             new_prob = (new_yes_reserve / total_new) * 100 if total_new > 0 else 50
             
-            current_prob = Decimal(str(self.get_current_price()))
+            # Execution price = weighted average between old and new YES probability
+            execution_price = (current_prob + Decimal(str(new_prob))) / Decimal('2')
+            
             price_impact = (new_prob - current_prob)
             
             return {
@@ -153,17 +158,18 @@ class AMM:
             new_yes_reserve = self.k / new_no_reserve
             proceeds = new_yes_reserve - self.yes_reserve
             
-            execution_price = (proceeds / shares) * 100 if shares > 0 else 0
-            
             total_new = new_yes_reserve + new_no_reserve
             new_prob = (new_yes_reserve / total_new) * 100 if total_new > 0 else 50
             
-            current_prob = Decimal(str(self.get_current_price()))
+            # Execution price for NO = 100% - average of YES probabilities
+            yes_execution_price = (current_prob + Decimal(str(new_prob))) / Decimal('2')
+            execution_price = Decimal('100') - yes_execution_price
+            
             price_impact = (new_prob - current_prob)
             
             return {
                 'proceeds': float(proceeds.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
-                'execution_price': float((100 - execution_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+                'execution_price': float(execution_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
                 'new_yes_probability': float(new_prob.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
                 'price_impact': float(price_impact.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             }
