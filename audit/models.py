@@ -151,6 +151,10 @@ class AuditLog(models.Model):
                 "Cannot update existing audit log entry."
             )
         
+        # Ensure created_at is set before hashing (auto_now_add won't set it until super().save())
+        if not self.created_at:
+            self.created_at = timezone.now()
+        
         # Calculate hash if not already set
         if not self.current_hash:
             # Get previous record's hash for chain
