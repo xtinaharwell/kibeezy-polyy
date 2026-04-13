@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('markets', '0002_auto_previous_migration'),  # Update to actual previous migration name
+        ('markets', '0002_bet_entry_probability_bet_payout_bet_result_and_more'),
     ]
 
     operations = [
