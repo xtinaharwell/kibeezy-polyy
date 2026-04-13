@@ -150,9 +150,25 @@ def place_bet(request):
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
         
-        # Validate amount
+        # Get action type early to determine amount validation
+        action = data.get('action', 'buy').lower()
+        if action not in ['buy', 'sell']:
+            return JsonResponse({'error': 'Invalid action. Must be buy or sell'}, status=400)
+        
+        # Validate amount based on action type
+        # For BUY: amount is KES (max 2 decimal places)
+        # For SELL: amount is shares (can have higher precision for fractional shares)
         try:
-            amount = validate_amount(amount, min_amount=Decimal('1'), max_amount=Decimal('100000'))
+            if action == 'buy':
+                # BUY orders: amount in KES with max 2 decimal places
+                amount = validate_amount(amount, min_amount=Decimal('1'), max_amount=Decimal('100000'))
+            else:
+                # SELL orders: amount is shares (can be fractional)
+                amount = Decimal(str(amount))
+                if amount <= 0:
+                    raise ValidationError('Amount must be positive')
+                if amount > Decimal('1000000'):
+                    raise ValidationError('Amount cannot exceed 1,000,000 shares')
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
 
@@ -193,11 +209,6 @@ def place_bet(request):
                 else:
                     entry_probability = matching_option.get('no_probability', 50)
         
-        # Get action type (buy or sell)
-        action = data.get('action', 'buy').lower()
-        if action not in ['buy', 'sell']:
-            return JsonResponse({'error': 'Invalid action. Must be buy or sell'}, status=400)
-        
         # Get order type (MARKET or LIMIT)
         order_type = data.get('order_type', 'MARKET')
         if order_type not in ['MARKET', 'LIMIT']:
@@ -221,24 +232,31 @@ def place_bet(request):
             except ValidationError as e:
                 return JsonResponse({'error': e.message}, status=400)
         
-        # For MARKET orders with amounts, calculate fractional shares
+        # For MARKET BUY orders with KES amounts, calculate fractional shares
+        # For SELL orders, amount is already in shares
         calculated_quantity = Decimal(str(quantity))
-        if order_type == 'MARKET' and market.market_type == 'BINARY':
+        if order_type == 'MARKET' and action == 'buy' and market.market_type == 'BINARY':
             # Calculate shares based on amount and current probability
             current_price = Decimal(str(entry_probability))
             if current_price > 0:
                 calculated_quantity = amount / current_price
             else:
                 calculated_quantity = Decimal('1')
+        elif order_type == 'MARKET' and action == 'sell':
+            # For SELL orders, amount is already in shares
+            calculated_quantity = amount
         
         # Handle balance for MARKET orders only (LIMIT orders don't deduct balance immediately)
+        lmsr_result = None  # Will store LMSR result for balance updates
+        
         if order_type == 'MARKET':
             if action == 'buy':
                 # Check if user has sufficient balance
                 if amount > user.balance:
                     return JsonResponse({'error': f'Insufficient balance. Available: KES {user.balance}'}, status=400)
-                # Deduct from balance
+                # Deduct from balance immediately for BUY orders
                 user.balance -= amount
+                user.save()
             else:  # sell - must validate user owns these shares
                 # Calculate available shares to sell for this market/outcome
                 buy_quantity = Bet.objects.filter(
@@ -265,10 +283,8 @@ def place_bet(request):
                         'error': f'Cannot sell {amount} shares. You only own {available_quantity} shares of {outcome} on this market.'
                     }, status=400)
                 
-                # Add to balance (proceeds from selling)
-                user.balance += amount
-            
-            user.save()
+                # Don't update balance here for SELL - wait for LMSR execution to get actual payout
+                # Balance will be updated after LMSR calculation
         else:  # LIMIT order - only validate balance, don't deduct yet
             if action == 'buy':
                 # Check if user has sufficient balance for when order is filled
@@ -388,6 +404,16 @@ def place_bet(request):
                         result = sell_yes_shares(market, shares)
                     else:
                         result = sell_no_shares(market, shares)
+                
+                # Update balance for SELL orders with actual LMSR payout
+                if action == 'sell' and result:
+                    sell_payout_kes = result.get('payout_kes', Decimal('0'))
+                    user.balance += Decimal(str(sell_payout_kes))
+                    user.save()
+                    logger.info(
+                        f"SELL balance updated for user {user.id}: "
+                        f"received {sell_payout_kes} KES from selling {shares} shares"
+                    )
                 
                 # Update market probability from new LMSR prices
                 prices = get_market_prices(market)
