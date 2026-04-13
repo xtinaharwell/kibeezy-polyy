@@ -82,7 +82,12 @@ def user_dashboard(request):
                 'entry_probability': bet.entry_probability,
                 'result': bet.result,
                 'payout': str(bet.payout) if bet.payout else None,
-                'timestamp': bet.timestamp.isoformat()
+                'timestamp': bet.timestamp.isoformat(),
+                # Current market state for position value calculation
+                'current_yes_probability': bet.market.yes_probability,
+                'market_q_yes': float(bet.market.q_yes),
+                'market_q_no': float(bet.market.q_no),
+                'market_b': float(bet.market.b),
             })
             
             # Calculate portfolio value for open BUY positions (PENDING bets, exclude SELL)

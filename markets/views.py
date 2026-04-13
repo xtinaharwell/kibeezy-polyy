@@ -108,6 +108,10 @@ def list_markets(request):
             'is_bootstrapped': market.is_bootstrapped,
             'y_probability': market.yes_probability,
             'no_probability': 100 - market.yes_probability,
+            # LMSR state - required for frontend calculations
+            'q_yes': float(market.q_yes),
+            'q_no': float(market.q_no),
+            'b': float(market.b),
         }
         
         # Add multiplier info for easier UX
