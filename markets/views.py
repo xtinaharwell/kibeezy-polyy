@@ -4,9 +4,17 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.db import models
+from django.utils import timezone
 from decimal import Decimal
 from .models import Market, Bet, ChatMessage
-from .amm import AMM
+from .services import (
+    buy_yes_shares,
+    buy_no_shares,
+    sell_yes_shares,
+    sell_no_shares,
+    get_market_prices,
+    is_market_open,
+)
 from payments.models import Transaction
 from api.validators import validate_amount, validate_bet_outcome, ValidationError
 from users.models import CustomUser
@@ -344,40 +352,67 @@ def place_bet(request):
             related_bet_id=bet.id
         )
         
-        # Update probability using AMM if market has been bootstrapped
-        # ONLY bootstrapped markets have price movements
+        # LMSR-based price update for all markets
+        # Execute the trade through LMSR services and update market state
         if market.market_type == 'BINARY':
-            if market.is_bootstrapped and market.yes_reserve > 0 and market.no_reserve > 0:
-                # Use AMM for price update
-                try:
-                    amm = AMM(market.yes_reserve, market.no_reserve)
-                    buy_result = amm.calculate_buy_price(Decimal(str(amount)), outcome)
-                    
-                    # Update reserves based on the trade
-                    amm.update_reserves(outcome, Decimal(str(amount)), is_buy=(action == 'buy'))
-                    market.yes_reserve = amm.yes_reserve
-                    market.no_reserve = amm.no_reserve
-                    
-                    # Update probability for display
-                    market.yes_probability = max(1, min(99, int(buy_result['new_yes_probability'])))
-                except Exception as e:
-                    logger.error(f"AMM calculation error for market {market.id}: {str(e)}")
-                    # No fallback - market not moved if AMM fails
-            # Non-bootstrapped markets don't move at all
-        # For OPTION_LIST markets, update the specific option probability ONLY if bootstrapped
+            # Check if market is open
+            open_status, reason = is_market_open(market)
+            if not open_status:
+                logger.warning(f"Market {market.id} is not open for trading: {reason}")
+                # Still update volume
+                current_volume = parse_volume_value(market.volume)
+                market.volume = format_volume_value(current_volume + int(amount))
+                market.save()
+                # Return early - trade was recorded as limit order
+                return JsonResponse({
+                    'status': 'market_closed',
+                    'message': reason,
+                    'bet_id': bet.id if order_type == 'LIMIT' else None
+                })
+            
+            try:
+                shares = float(calculated_quantity)
+                
+                # Execute trade based on action
+                if action == 'buy':
+                    if outcome.upper() == 'YES':
+                        result = buy_yes_shares(market, shares)
+                    else:
+                        result = buy_no_shares(market, shares)
+                else:  # sell
+                    if outcome.upper() == 'YES':
+                        result = sell_yes_shares(market, shares)
+                    else:
+                        result = sell_no_shares(market, shares)
+                
+                # Update market probability from new LMSR prices
+                prices = get_market_prices(market)
+                market.yes_probability = int(prices['yes_price_pct'])
+                
+                logger.info(
+                    f"LMSR trade executed: market={market.id}, "
+                    f"outcome={outcome}, action={action}, "
+                    f"shares={shares}, new_price={market.yes_probability}%"
+                )
+                
+            except ValueError as e:
+                logger.error(f"Invalid LMSR trade for market {market.id}: {str(e)}")
+                # Trade still recorded, but market price doesn't move
+            except Exception as e:
+                logger.error(f"LMSR calculation error for market {market.id}: {str(e)}")
+        
         elif market.market_type == 'OPTION_LIST' and market.options:
-            if market.is_bootstrapped:
-                # TODO: Implement AMM for OPTION_LIST markets
-                for opt in market.options:
-                    if opt.get('id') == option_id:
-                        if outcome == 'Yes':
-                            opt['yes_probability'] = min(99, opt.get('yes_probability', 50) + 1)
-                        else:
-                            opt['no_probability'] = min(99, opt.get('no_probability', 50) + 1)
-                            opt['yes_probability'] = 100 - opt['no_probability']
-                        break
-                market.options = market.options  # Trigger update
-            # Non-bootstrapped OPTION_LIST markets don't move at all
+            # LMSR for option markets (TODO: implement per-option LMSR)
+            # For now, simple probability adjustment
+            for opt in market.options:
+                if opt.get('id') == option_id:
+                    if outcome == 'Yes':
+                        opt['yes_probability'] = min(99, opt.get('yes_probability', 50) + 1)
+                    else:
+                        opt['no_probability'] = min(99, opt.get('no_probability', 50) + 1)
+                        opt['yes_probability'] = 100 - opt['no_probability']
+                    break
+            market.options = market.options  # Trigger update
 
         current_volume = parse_volume_value(market.volume)
         market.volume = format_volume_value(current_volume + int(amount))
@@ -757,52 +792,58 @@ def preview_trade_price(request):
         
         market = Market.objects.get(id=market_id)
         
-        # Check if market is bootstrapped for AMM pricing
-        if not market.is_bootstrapped or market.yes_reserve <= 0 or market.no_reserve <= 0:
-            # Market must be bootstrapped to trade
+        # Check if market is open
+        open_status, reason = is_market_open(market)
+        if not open_status:
             return JsonResponse({
-                'error': 'This market is not yet active for trading. It will be bootstrapped with liquidity soon.',
+                'error': f'Market is not open: {reason}',
                 'market_id': market.id,
-                'is_amm': False,
+                'is_lmsr': False,
             }, status=400)
         
-        # Use AMM for pricing
+        # Get current market prices
+        current_prices = get_market_prices(market)
+        
+        # For previewing, we don't actually execute the trade,
+        # just return the current market prices and a simple estimate
         try:
-            amm = AMM(market.yes_reserve, market.no_reserve)
-            
             if action == 'buy':
-                result = amm.calculate_buy_price(amount, outcome)
+                # Rough estimate: shares = amount / currentPrice (in KES)
+                current_price_kes = current_prices['yes_price_kes'] if outcome.upper() == 'YES' else current_prices['no_price_kes']
+                estimated_shares = float(amount) / current_price_kes if current_price_kes > 0 else 0
+                
                 return JsonResponse({
                     'market_id': market.id,
                     'outcome': outcome,
                     'amount': str(amount),
                     'action': 'buy',
-                    'current_probability': amm.get_current_price() if outcome == 'Yes' else (100 - amm.get_current_price()),
-                    'execution_price': result['execution_price'],
-                    'new_probability': result['new_yes_probability'] if outcome == 'Yes' else (100 - result['new_yes_probability']),
-                    'price_impact': result['price_impact'],
-                    'shares_received': result['shares_received'],
-                    'is_amm': True,
-                    'message': f"You'll receive {result['shares_received']} shares at {result['execution_price']}% execution price"
+                    'current_yes_price': current_prices['yes_price_kes'],
+                    'current_no_price': current_prices['no_price_kes'],
+                    'estimated_execution_price': current_price_kes,
+                    'estimated_shares': round(estimated_shares, 2),
+                    'is_lmsr': True,
+                    'message': f"You'll receive approximately {estimated_shares:.2f} shares at KES {current_price_kes} per share"
                 })
             else:  # sell
-                shares_to_sell = amount  # For sell preview, amount is in shares
-                result = amm.calculate_sell_price(amount, outcome)
+                # For sell, amount represents shares
+                shares_to_sell = float(amount)
+                current_price_kes = current_prices['yes_price_kes'] if outcome.upper() == 'YES' else current_prices['no_price_kes']
+                estimated_proceeds = shares_to_sell * current_price_kes
+                
                 return JsonResponse({
                     'market_id': market.id,
                     'outcome': outcome,
                     'shares': str(shares_to_sell),
                     'action': 'sell',
-                    'current_probability': amm.get_current_price() if outcome == 'Yes' else (100 - amm.get_current_price()),
-                    'execution_price': result['execution_price'],
-                    'new_probability': result['new_yes_probability'] if outcome == 'Yes' else (100 - result['new_yes_probability']),
-                    'price_impact': result['price_impact'],
-                    'proceeds_kES': result['proceeds'],
-                    'is_amm': True,
-                    'message': f"You'll receive {result['proceeds']} KES for {shares_to_sell} shares"
+                    'current_yes_price': current_prices['yes_price_kes'],
+                    'current_no_price': current_prices['no_price_kes'],
+                    'estimated_execution_price': current_price_kes,
+                    'estimated_proceeds_kes': round(estimated_proceeds, 2),
+                    'is_lmsr': True,
+                    'message': f"You'll receive approximately {estimated_proceeds:.2f} KES for {shares_to_sell} shares"
                 })
         except Exception as e:
-            logger.error(f"AMM preview error: {str(e)}")
+            logger.error(f"LMSR preview error: {str(e)}")
             return JsonResponse({'error': f'Price calculation error: {str(e)}'}, status=500)
     
     except Market.DoesNotExist:
@@ -818,19 +859,21 @@ def preview_trade_price(request):
 @csrf_exempt
 def bootstrap_market_liquidity(request):
     """
-    Bootstrap a market with initial AMM liquidity (Admin only).
-    Creates equal reserves for YES and NO outcomes.
+    Bootstrap a market with initial LMSR liquidity (Admin only).
+    Sets the market's q_yes and q_no based on desired initial probability.
     
     POST /api/markets/bootstrap/
     {
         "market_id": 1,
-        "liquidity_amount": 100000  # Total liquidity to add (50k YES, 50k NO)
+        "initial_probability": 50,  # YES probability (0-100)
+        "b": 100.0  # Liquidity parameter (optional, defaults to 100)
     }
     """
     try:
         data = json.loads(request.body)
         market_id = data.get('market_id')
-        liquidity_amount = data.get('liquidity_amount', 100000)  # Default to 100K if not provided
+        initial_probability = data.get('initial_probability', 50)
+        b = float(data.get('b', 100.0))
         
         # Check if user is authenticated and is staff/admin
         user = get_authenticated_user(request)
@@ -841,36 +884,42 @@ def bootstrap_market_liquidity(request):
             return JsonResponse({'error': 'market_id required'}, status=400)
         
         try:
-            liquidity = Decimal(str(liquidity_amount))
-            if liquidity <= 0:
-                return JsonResponse({'error': 'Liquidity amount must be positive'}, status=400)
+            initial_prob = float(initial_probability)
+            if not (0 < initial_prob < 100):
+                return JsonResponse({'error': 'Initial probability must be between 0 and 100'}, status=400)
         except (ValueError, TypeError):
-            return JsonResponse({'error': 'Invalid liquidity amount'}, status=400)
+            return JsonResponse({'error': 'Invalid initial probability'}, status=400)
         
         market = Market.objects.get(id=market_id)
         
         # Check if already bootstrapped
-        if market.is_bootstrapped:
+        if market.q_yes != 0 or market.q_no != 0:
             return JsonResponse({'error': 'Market already bootstrapped'}, status=400)
         
-        # Initialize equal reserves (50/50 split)
-        half_liquidity = liquidity / Decimal('2')
-        market.yes_reserve = half_liquidity
-        market.no_reserve = half_liquidity
+        # Calculate q_yes and q_no for desired probability
+        from .bootstrap import bootstrap_market
+        q_yes, q_no = bootstrap_market(initial_prob / 100.0, b)
+        
+        market.q_yes = q_yes
+        market.q_no = q_no
+        market.b = b
         market.is_bootstrapped = True
-        market.yes_probability = 50  # Set initial price to 50%
+        market.yes_probability = int(initial_prob)
         market.save()
         
-        logger.info(f"Bootstrapped market {market_id} with {liquidity} KES liquidity")
+        logger.info(
+            f"Bootstrapped market {market_id} with "
+            f"q_yes={q_yes}, q_no={q_no}, b={b}, initial_prob={initial_prob}%"
+        )
         
         return JsonResponse({
             'status': 'success',
             'market_id': market.id,
-            'liquidity_amount': str(liquidity),
-            'yes_reserve': str(market.yes_reserve),
-            'no_reserve': str(market.no_reserve),
-            'initial_price': 50,
-            'message': f'Market bootstrapped with {liquidity} KES'
+            'q_yes': round(q_yes, 6),
+            'q_no': round(q_no, 6),
+            'b': b,
+            'initial_probability': initial_prob,
+            'message': f'Market bootstrapped with {initial_prob}% YES probability'
         })
     except Market.DoesNotExist:
         return JsonResponse({'error': 'Market not found'}, status=404)

@@ -1,6 +1,6 @@
 """
 Celery tasks for market settlement and payout processing
-Calculates pari-mutuel payouts and initiates B2C transfers
+LMSR-based settlement: payouts = shares × 100 KES per share
 """
 import logging
 from decimal import Decimal
@@ -14,23 +14,22 @@ from payments.daraja_b2c import call_b2c, normalize_phone
 
 logger = logging.getLogger(__name__)
 
-# Platform fees - customize as needed
-PLATFORM_FEE_PCT = Decimal('5.00')  # 5% platform fee
+# LMSR payout model
+PAYOUT_PER_SHARE = Decimal('100')  # Fixed payout per share
 MIN_PAYOUT = Decimal('10')  # Don't send payouts < KES 10
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def settle_market(self, market_id):
     """
-    Settlement task for a resolved market
+    Settlement task for a resolved market (LMSR-based).
     
     Flow:
     1. Validate market is CLOSED and has resolved_outcome
-    2. Calculate total pool and winner pool
-    3. Calculate payout for each winning bet
-    4. Create payout transactions
-    5. Enqueue B2C calls
-    6. Mark market as RESOLVED
+    2. For each winning bet: payout = shares × 100 KES
+    3. Create payout transactions
+    4. Enqueue B2C calls
+    5. Mark market as RESOLVED
     
     Args:
         market_id: Market.id to settle
@@ -56,47 +55,33 @@ def settle_market(self, market_id):
                 logger.error(f"Market {market_id} closed but no resolved_outcome set")
                 return {'status': 'error', 'error': 'no_resolved_outcome'}
             
-            # Calculate total pool and winners pool
+            # Get all bets
             all_bets = Bet.objects.filter(market=market)
-            total_pool = sum(Decimal(str(bet.amount)) for bet in all_bets)
             
-            if total_pool == 0:
-                logger.warning(f"Market {market_id} has zero pool, no settlement")
+            if all_bets.count() == 0:
+                logger.warning(f"Market {market_id} has no bets, skipping settlement")
                 market.status = 'RESOLVED'
                 market.save()
-                return {'status': 'no_bets', 'total_pool': 0}
+                return {'status': 'no_bets', 'total_bets': 0}
             
             # Get winning bets
             winning_bets = all_bets.filter(outcome=market.resolved_outcome)
-            winners_pool = sum(Decimal(str(bet.amount)) for bet in winning_bets)
-            
-            if winners_pool == 0:
-                logger.warning(f"Market {market_id} resolved but no winning bets, refunding all")
-                # Refund all bettors
-                for bet in all_bets:
-                    _create_refund_transaction(bet)
-                market.status = 'RESOLVED'
-                market.save()
-                return {'status': 'no_winners', 'refunded_count': all_bets.count()}
-            
-            # Calculate distributable pool (after platform fee)
-            platform_fee_amount = (PLATFORM_FEE_PCT / Decimal('100')) * total_pool
-            distributable_pool = total_pool - platform_fee_amount
+            losing_bets = all_bets.exclude(outcome=market.resolved_outcome)
             
             logger.info(
                 f"Settling market {market_id}: "
-                f"total_pool={total_pool}, winners_pool={winners_pool}, "
-                f"distributable={distributable_pool}, fee={platform_fee_amount}"
+                f"winners={winning_bets.count()}, losers={losing_bets.count()}"
             )
             
             # Create payout transactions for each winner
+            # In LMSR, payout = shares × 100 KES (fixed per share)
             payout_count = 0
             payout_amount_total = Decimal('0')
             
             for bet in winning_bets:
-                # Pari-mutuel payout formula
-                payout_gross = (Decimal(str(bet.amount)) / winners_pool) * distributable_pool
-                payout_amount = round(payout_gross, 2)
+                # LMSR payout: shares × 100 KES
+                shares = Decimal(str(bet.quantity))
+                payout_amount = shares * PAYOUT_PER_SHARE
                 profit = payout_amount - Decimal(str(bet.amount))
                 
                 # Create transaction record
@@ -120,7 +105,8 @@ def settle_market(self, market_id):
                 bet.save()
                 
                 logger.info(
-                    f"Bet {bet.id} winner: stake={bet.amount}, payout={payout_amount}, profit={profit}"
+                    f"Bet {bet.id} winner: "
+                    f"shares={shares}, payout={payout_amount}, profit={profit}"
                 )
                 
                 # Enqueue B2C call
@@ -136,7 +122,6 @@ def settle_market(self, market_id):
                 payout_amount_total += payout_amount
             
             # Mark losing bets
-            losing_bets = all_bets.exclude(outcome=market.resolved_outcome)
             for bet in losing_bets:
                 bet.result = 'LOST'
                 bet.save()
@@ -149,10 +134,6 @@ def settle_market(self, market_id):
             return {
                 'status': 'settled',
                 'market_id': market_id,
-                'total_pool': str(total_pool),
-                'winners_pool': str(winners_pool),
-                'distributable_pool': str(distributable_pool),
-                'platform_fee': str(platform_fee_amount),
                 'winner_count': winning_bets.count(),
                 'loser_count': losing_bets.count(),
                 'payout_transactions_created': payout_count,
