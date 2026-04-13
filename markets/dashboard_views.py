@@ -92,13 +92,31 @@ def user_dashboard(request):
             
             # Calculate portfolio value for open BUY positions (PENDING bets, exclude SELL)
             if bet.result == 'PENDING' and bet.action == 'BUY':
-                # Polymarket formula: value = amount * (100 / entry_probability)
-                # Entry probability is stored when the bet was placed
-                entry_prob = Decimal(bet.entry_probability)
-                if entry_prob > 0:
-                    multiplier = Decimal('100') / entry_prob
-                    current_value = bet.amount * multiplier
-                    portfolio_value += current_value
+                # LMSR position value = shares * max_payout * probability
+                # If you own YES shares and market is 70% YES:
+                # value = shares * 100 KES * 0.70 = shares * 70 KES
+                from markets.lmsr import price_yes
+                
+                try:
+                    market_price = price_yes(
+                        float(bet.market.q_yes),
+                        float(bet.market.q_no),
+                        float(bet.market.b)
+                    )
+                except:
+                    market_price = float(bet.market.yes_probability) / 100.0
+                
+                # Determine winning probability based on outcome
+                if bet.outcome == 'Yes':
+                    winning_prob = market_price
+                else:
+                    winning_prob = 1.0 - market_price
+                
+                # Position value = shares * max_payout * probability
+                share_quantity = float(bet.quantity or 1)
+                max_payout = Decimal('100')  # 100 KES per share
+                position_value = Decimal(str(share_quantity)) * max_payout * Decimal(str(winning_prob))
+                portfolio_value += position_value
         
         # Get user statistics
         stats = user.get_user_statistics()
