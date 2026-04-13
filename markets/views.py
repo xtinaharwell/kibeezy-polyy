@@ -91,6 +91,11 @@ def list_markets(request):
     markets_data = []
     
     for market in markets:
+        # Determine effective status based on trading_end_time
+        effective_status = market.status
+        if market.status == 'OPEN' and market.trading_end_time and timezone.now() >= market.trading_end_time:
+            effective_status = 'CLOSED'
+        
         market_dict = {
             'id': market.id,
             'question': market.question,
@@ -101,7 +106,8 @@ def list_markets(request):
             'yes_probability': market.yes_probability,
             'options': market.options,
             'volume': market.volume,
-            'status': market.status,
+            'status': effective_status,  # Use effective status
+            'trading_end_time': market.trading_end_time.isoformat() if market.trading_end_time else None,
             'end_date': market.end_date,
             'resolved_outcome': market.resolved_outcome,
             'created_at': market.created_at.isoformat(),
@@ -183,9 +189,13 @@ def place_bet(request):
                 'error': 'This market is not yet active for trading. It will be bootstrapped with liquidity soon.'
             }, status=400)
         
-        # Check if market is open
+        # Check if market is open (both status and trading_end_time)
         if market.status != 'OPEN':
             return JsonResponse({'error': f'Market is {market.status.lower()}'}, status=400)
+        
+        # Check if trading has ended
+        if market.trading_end_time and timezone.now() >= market.trading_end_time:
+            return JsonResponse({'error': 'Trading for this market has ended'}, status=400)
         
         # Handle OPTION_LIST markets
         option_id = None

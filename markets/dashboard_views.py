@@ -72,6 +72,9 @@ def user_dashboard(request):
         bets_data = []
         portfolio_value = Decimal('0.00')
         
+        # Track net positions for portfolio calculation: (market_id, outcome) -> net_quantity
+        net_positions = {}
+        
         for bet in bets:
             bets_data.append({
                 'id': bet.id,
@@ -90,33 +93,56 @@ def user_dashboard(request):
                 'market_b': float(bet.market.b),
             })
             
-            # Calculate portfolio value for open BUY positions (PENDING bets, exclude SELL)
-            if bet.result == 'PENDING' and bet.action == 'BUY':
-                # LMSR position value = shares * max_payout * probability
-                # If you own YES shares and market is 70% YES:
-                # value = shares * 100 KES * 0.70 = shares * 70 KES
-                from markets.lmsr import price_yes
-                
-                try:
-                    market_price = price_yes(
-                        float(bet.market.q_yes),
-                        float(bet.market.q_no),
-                        float(bet.market.b)
-                    )
-                except:
-                    market_price = float(bet.market.yes_probability) / 100.0
-                
-                # Determine winning probability based on outcome
-                if bet.outcome == 'Yes':
-                    winning_prob = market_price
-                else:
-                    winning_prob = 1.0 - market_price
-                
-                # Position value = shares * max_payout * probability
+            # For PENDING bets, accumulate net positions (BUY adds, SELL subtracts)
+            if bet.result == 'PENDING':
+                position_key = (bet.market.id, bet.outcome)
                 share_quantity = float(bet.quantity or 1)
-                max_payout = Decimal('100')  # 100 KES per share
-                position_value = Decimal(str(share_quantity)) * max_payout * Decimal(str(winning_prob))
-                portfolio_value += position_value
+                
+                if position_key not in net_positions:
+                    net_positions[position_key] = {
+                        'net_quantity': 0,
+                        'market': bet.market,
+                        'outcome': bet.outcome,
+                    }
+                
+                # Add for BUY, subtract for SELL
+                if bet.action == 'BUY':
+                    net_positions[position_key]['net_quantity'] += share_quantity
+                elif bet.action == 'SELL':
+                    net_positions[position_key]['net_quantity'] -= share_quantity
+        
+        # Calculate portfolio value based on net positions
+        for position_key, position_data in net_positions.items():
+            net_quantity = position_data['net_quantity']
+            market = position_data['market']
+            outcome = position_data['outcome']
+            
+            # Skip if net position is zero or negative (all shares sold or oversold)
+            if net_quantity <= 0:
+                continue
+            
+            # Calculate market probability
+            from markets.lmsr import price_yes
+            
+            try:
+                market_price = price_yes(
+                    float(market.q_yes),
+                    float(market.q_no),
+                    float(market.b)
+                )
+            except:
+                market_price = float(market.yes_probability) / 100.0
+            
+            # Determine winning probability based on outcome
+            if outcome == 'Yes':
+                winning_prob = market_price
+            else:
+                winning_prob = 1.0 - market_price
+            
+            # Position value = net_quantity * max_payout * probability
+            max_payout = Decimal('100')  # 100 KES per share
+            position_value = Decimal(str(net_quantity)) * max_payout * Decimal(str(winning_prob))
+            portfolio_value += position_value
         
         # Get user statistics
         stats = user.get_user_statistics()
