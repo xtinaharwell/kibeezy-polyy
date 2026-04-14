@@ -44,11 +44,6 @@ class Market(models.Model):
     
     # Market control fields
     trading_end_time = models.DateTimeField(null=True, blank=True)  # When trading closes
-    
-    # Legacy AMM fields (deprecated - kept for backward compatibility)
-    yes_reserve = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    no_reserve = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    is_bootstrapped = models.BooleanField(default=False)
 
     def __str__(self):
         return self.question

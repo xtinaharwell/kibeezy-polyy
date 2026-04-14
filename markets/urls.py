@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import list_markets, place_bet, market_chat, market_details, get_price_history, bootstrap_market_liquidity, preview_trade_price, get_user_available_shares
+from .views import list_markets, place_bet, market_chat, market_details, get_price_history, preview_trade_price, get_user_available_shares
 from .dashboard_views import user_dashboard, transaction_history, initiate_withdrawal
 from .admin_views import admin_markets, resolve_market, create_market, delete_market
 
@@ -22,5 +22,4 @@ urlpatterns = [
     path('admin/markets/<int:market_id>/', delete_market, name='delete_market'),
     path('admin/resolve/', resolve_market, name='resolve_market'),
     path('admin/create/', create_market, name='create_market'),
-    path('bootstrap/', bootstrap_market_liquidity, name='bootstrap_liquidity'),
 ]

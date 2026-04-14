@@ -82,10 +82,7 @@ def create_test_market():
                 "category": "Politics",
                 "status": "OPEN",
                 "yes_probability": 50,
-                "end_date": "2026-12-31",
-                "yes_reserve": Decimal("1000.00"),
-                "no_reserve": Decimal("1000.00"),
-                "is_bootstrapped": True
+                "end_date": "2026-12-31"
             }
         )
         

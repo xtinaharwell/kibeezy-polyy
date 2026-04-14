@@ -178,12 +178,6 @@ def place_bet(request):
         except Market.DoesNotExist:
             return JsonResponse({'error': 'Market not found'}, status=404)
         
-        # Check if market is bootstrapped for trading
-        if not market.is_bootstrapped or market.yes_reserve <= 0 or market.no_reserve <= 0:
-            return JsonResponse({
-                'error': 'This market is not yet active for trading. It will be bootstrapped with liquidity soon.'
-            }, status=400)
-        
         # Check if market is open (both status and trading_end_time)
         if market.status != 'OPEN':
             return JsonResponse({'error': f'Market is {market.status.lower()}'}, status=400)
@@ -938,7 +932,6 @@ def bootstrap_market_liquidity(request):
         market.q_yes = q_yes
         market.q_no = q_no
         market.b = b
-        market.is_bootstrapped = True
         market.yes_probability = int(initial_prob)
         market.save()
         
