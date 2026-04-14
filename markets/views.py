@@ -111,7 +111,6 @@ def list_markets(request):
             'end_date': market.end_date,
             'resolved_outcome': market.resolved_outcome,
             'created_at': market.created_at.isoformat(),
-            'is_bootstrapped': market.is_bootstrapped,
             'y_probability': market.yes_probability,
             'no_probability': 100 - market.yes_probability,
             # LMSR state - required for frontend calculations
