@@ -29,7 +29,6 @@ from django.utils import timezone
 from users.models import CustomUser
 from markets.models import Market, Bet
 from payments.models import Transaction
-from markets.amm import AMM
 from notifications.models import Notification
 from markets.tasks import match_limit_orders_impl, expire_unmatched_limit_orders_impl
 
@@ -385,40 +384,6 @@ def test_notifications_on_execution(user, market):
         traceback.print_exc()
         return False
 
-def test_price_impact_with_limit_orders(user, market):
-    """Test 7: Price impact calculations with limit orders"""
-    print("\n" + "="*60)
-    print("TEST 7: Price Impact Calculations")
-    print("="*60)
-    
-    try:
-        print(f"Current market probability: {market.yes_probability}%")
-        
-        # Initialize AMM with market reserves
-        amm = AMM(
-            yes_reserve=market.yes_reserve,
-            no_reserve=market.no_reserve
-        )
-        
-        # Calculate price for a market order
-        result = amm.calculate_buy_price(
-            amount=Decimal("100.00"),
-            outcome="Yes"
-        )
-        
-        print(f"\n✓ AMM Price Calculation (Market Order)")
-        print(f"  Current Price: {amm.get_current_price()}%")
-        print(f"  Amount: KES 100.00")
-        print(f"  Execution Price: {result['execution_price']}%")
-        print(f"  New Price: {result['new_yes_probability']}%")
-        print(f"  Price Impact: {result['price_impact']}%")
-        
-        return True
-    except Exception as e:
-        print(f"✗ Failed: {str(e)}")
-        traceback.print_exc()
-        return False
-
 def test_reserve_calculation(user, market):
     """Test 8: Reserved balance for pending orders"""
     print("\n" + "="*60)
@@ -508,7 +473,6 @@ def run_all_tests():
         ("Matching Engine Execution", lambda: test_matching_engine_execution(user, market)),
         ("Order Expiration", lambda: test_order_expiration(user, market)),
         ("Execution Notifications", lambda: test_notifications_on_execution(user, market)),
-        ("Price Impact Calculations", lambda: test_price_impact_with_limit_orders(user, market)),
         ("Reserved Balance", lambda: test_reserve_calculation(user, market)),
     ]
     

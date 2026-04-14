@@ -125,11 +125,6 @@ def list_markets(request):
             market_dict['yes_multiplier'] = round(100 / market.yes_probability, 2)
             market_dict['no_multiplier'] = round(100 / (100 - market.yes_probability), 2)
         
-        # Add AMM reserve info if bootstrapped
-        if market.is_bootstrapped:
-            market_dict['yes_reserve'] = str(market.yes_reserve)
-            market_dict['no_reserve'] = str(market.no_reserve)
-        
         markets_data.append(market_dict)
     
     return JsonResponse(markets_data, safe=False)
