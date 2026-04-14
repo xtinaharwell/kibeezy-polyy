@@ -467,10 +467,24 @@ def place_bet(request):
         logger.info(f"Bet {action_verb} by {user.phone_number}: {outcome} {amount} on market {market_id}")
 
         response_msg = 'Position closed successfully' if action == 'sell' else 'Bet placed successfully'
+        
+        # Prepare market state response
+        market_response = {
+            'q_yes': float(market.q_yes),
+            'q_no': float(market.q_no),
+            'yes_probability': market.yes_probability,
+        }
+        
+        # Include execution price if available from LMSR trade
+        if result and isinstance(result, dict):
+            market_response['execution_price'] = result.get('execution_price', market.yes_probability)
+            market_response['new_yes_price'] = result.get('new_yes_price', market.yes_probability)
+        
         return JsonResponse({
             'message': response_msg, 
             'bet_id': bet.id,
-            'new_balance': str(user.balance)
+            'new_balance': str(user.balance),
+            'market': market_response
         })
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
