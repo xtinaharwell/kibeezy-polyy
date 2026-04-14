@@ -618,4 +618,190 @@ def lock_phone_after_deposit_view(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+def _check_admin_access(request):
+    """Helper to check if user is admin"""
+    try:
+        if request.user.is_authenticated and request.user.is_staff:
+            return True
+        elif request.headers.get('X-User-Phone-Number'):
+            phone_number = request.headers.get('X-User-Phone-Number')
+            phone_number = normalize_phone_number(phone_number)
+            user_obj = CustomUser.objects.get(phone_number=phone_number)
+            return user_obj.is_staff or user_obj.is_superuser
+    except:
+        pass
+    return False
+
+
+@require_http_methods(["GET"])
+def admin_get_user_portfolio(request, user_id):
+    """Get a user's portfolio/positions in markets (admin only)"""
+    try:
+        if not _check_admin_access(request):
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+        try:
+            target_user = CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        # Import here to avoid circular imports
+        from markets.models import Bet, Market
+        from decimal import Decimal
+        
+        # Get all bets for this user and aggregate by market/outcome
+        bets = Bet.objects.filter(user=target_user).select_related('market')
+        
+        portfolio_positions = {}  # {market_id: {outcome: {bought: X, sold: Y, ...}}}
+        
+        for bet in bets:
+            market_id = bet.market_id
+            outcome = bet.outcome
+            action = bet.action  # 'BUY' or 'SELL'
+            
+            key = f"{market_id}_{outcome}"
+            if key not in portfolio_positions:
+                portfolio_positions[key] = {
+                    'market_id': market_id,
+                    'market_question': bet.market.question,
+                    'outcome': outcome,
+                    'bought_quantity': 0,
+                    'sold_quantity': 0,
+                    'total_cost': 0,
+                    'total_payout': 0,
+                    'num_wins': 0,
+                    'num_losses': 0,
+                }
+            
+            pos = portfolio_positions[key]
+            
+            if action == 'BUY':
+                pos['bought_quantity'] += float(bet.quantity or 0)
+                pos['total_cost'] += float(bet.amount or 0)
+            elif action == 'SELL':
+                pos['sold_quantity'] += float(bet.quantity or 0)
+                pos['total_payout'] += float(bet.payout or 0)
+            
+            # Track wins/losses
+            if bet.result == 'WON':
+                pos['num_wins'] += 1
+            elif bet.result == 'LOST':
+                pos['num_losses'] += 1
+        
+        # Calculate net positions and current values
+        positions_list = []
+        total_portfolio_value = 0
+        
+        for key, pos in portfolio_positions.items():
+            net_quantity = pos['bought_quantity'] - pos['sold_quantity']
+            
+            # Only include if net position > 0
+            if net_quantity > 0:
+                market = Market.objects.get(id=pos['market_id'])
+                
+                # Get current probability
+                if market.market_type == 'BINARY':
+                    if pos['outcome'] == 'Yes':
+                        current_prob = market.yes_probability / 100
+                    else:
+                        current_prob = (100 - market.yes_probability) / 100
+                else:
+                    current_prob = market.yes_probability / 100  # Simplified
+                
+                # Current position value = net_quantity * 100 * probability
+                current_value = net_quantity * 100 * current_prob
+                pnl = current_value - pos['total_cost']
+                
+                total_portfolio_value += current_value
+                
+                positions_list.append({
+                    'market_id': pos['market_id'],
+                    'market_question': pos['market_question'],
+                    'outcome': pos['outcome'],
+                    'net_shares': round(net_quantity, 8),
+                    'bought': round(pos['bought_quantity'], 8),
+                    'sold': round(pos['sold_quantity'], 8),
+                    'total_cost_kes': round(pos['total_cost'], 2),
+                    'current_value_kes': round(current_value, 2),
+                    'pnl_kes': round(pnl, 2),
+                    'current_probability': round(current_prob * 100, 2),
+                    'wins': pos['num_wins'],
+                    'losses': pos['num_losses'],
+                })
+        
+        return JsonResponse({
+            'user_id': target_user.id,
+            'user_name': target_user.full_name,
+            'user_phone': target_user.phone_number,
+            'total_portfolio_value_kes': round(total_portfolio_value, 2),
+            'positions': positions_list,
+            'num_positions': len(positions_list),
+        }, status=200)
+    
+    except Exception as e:
+        logger.error(f"Admin get user portfolio error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def admin_get_user_activity(request, user_id):
+    """Get a user's activity log (bets, deposits, etc.) (admin only)"""
+    try:
+        if not _check_admin_access(request):
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+        try:
+            target_user = CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        from markets.models import Bet
+        from payments.models import Transaction
+        
+        activity_log = []
+        
+        # Get all bets
+        bets = Bet.objects.filter(user=target_user).select_related('market').order_by('-timestamp')[:100]
+        for bet in bets:
+            activity_log.append({
+                'type': 'BET',
+                'action': bet.action,  # BUY or SELL
+                'market': bet.market.question[:50],
+                'outcome': bet.outcome,
+                'amount': float(bet.amount),
+                'quantity': float(bet.quantity or 0),
+                'result': bet.result,
+                'payout': float(bet.payout or 0),
+                'timestamp': bet.timestamp.isoformat() if bet.timestamp else None,
+            })
+        
+        # Get all transactions
+        transactions = Transaction.objects.filter(user=target_user).order_by('-created_at')[:100]
+        for txn in transactions:
+            activity_log.append({
+                'type': 'TRANSACTION',
+                'transaction_type': txn.type,  # DEPOSIT, WITHDRAWAL, PAYOUT
+                'amount': float(txn.amount),
+                'status': txn.status,
+                'phone_number': txn.phone_number,
+                'description': txn.description,
+                'timestamp': txn.created_at.isoformat() if txn.created_at else None,
+            })
+        
+        # Sort by timestamp descending
+        activity_log.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+        
+        return JsonResponse({
+            'user_id': target_user.id,
+            'user_name': target_user.full_name,
+            'user_phone': target_user.phone_number,
+            'activity': activity_log[:50],  # Return last 50 activities
+            'count': len(activity_log),
+        }, status=200)
+    
+    except Exception as e:
+        logger.error(f"Admin get user activity error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 
