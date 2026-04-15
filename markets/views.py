@@ -828,7 +828,18 @@ def preview_trade_price(request):
         
         try:
             outcome = validate_bet_outcome(outcome)
-            amount = validate_amount(amount, min_amount=Decimal('1'), max_amount=Decimal('100000'))
+            # Validate amount based on action type
+            # For BUY: amount is KES (max 2 decimal places)
+            # For SELL: amount is shares (can have higher precision for fractional shares)
+            if action == 'buy':
+                amount = validate_amount(amount, min_amount=Decimal('1'), max_amount=Decimal('100000'))
+            else:
+                # SELL: amount is shares (can be fractional)
+                amount = Decimal(str(amount))
+                if amount <= 0:
+                    raise ValidationError('Amount must be positive')
+                if amount > Decimal('1000000'):
+                    raise ValidationError('Amount cannot exceed 1,000,000 shares')
         except ValidationError as e:
             return JsonResponse({'error': e.message}, status=400)
         

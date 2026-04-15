@@ -70,7 +70,7 @@ class Bet(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bets')
     market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name='bets')
     outcome = models.CharField(max_length=10, choices=[('Yes', 'Yes'), ('No', 'No')])
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(max_digits=15, decimal_places=8)
     entry_probability = models.IntegerField(default=50)
     option_id = models.IntegerField(null=True, blank=True)  # For OPTION_LIST markets: identifies which option was traded
     option_label = models.CharField(max_length=255, null=True, blank=True)  # Denormalized for quick lookup
