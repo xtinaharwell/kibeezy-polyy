@@ -2,6 +2,7 @@ from django.urls import path
 from .views import list_markets, place_bet, market_chat, market_details, get_price_history, preview_trade_price, get_user_available_shares
 from .dashboard_views import user_dashboard, transaction_history, initiate_withdrawal
 from .admin_views import admin_markets, resolve_market, create_market, delete_market
+from .analytics_views import analytics_dashboard, risk_dashboard
 
 urlpatterns = [
     path('', list_markets, name='list_markets'),
@@ -22,4 +23,8 @@ urlpatterns = [
     path('admin/markets/<int:market_id>/', delete_market, name='delete_market'),
     path('admin/resolve/', resolve_market, name='resolve_market'),
     path('admin/create/', create_market, name='create_market'),
+    
+    # Analytics endpoints
+    path('admin/analytics/', analytics_dashboard, name='analytics_dashboard'),
+    path('admin/risk/', risk_dashboard, name='risk_dashboard'),
 ]
