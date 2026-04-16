@@ -3,6 +3,7 @@ from django.utils.safestring import mark_safe
 from django import forms
 from decimal import Decimal
 from .models import Market, Bet, PriceHistory, ChatMessage
+import math
 
 
 class MarketAdminForm(forms.ModelForm):
@@ -11,16 +12,27 @@ class MarketAdminForm(forms.ModelForm):
     class Meta:
         model = Market
         fields = '__all__'
+    
+    def clean(self):
+        """Validate market data before saving"""
+        cleaned_data = super().clean()
+        yes_prob = cleaned_data.get('yes_probability', 50)
+        
+        # Validate probability is between 1 and 99
+        if yes_prob and (yes_prob < 1 or yes_prob > 99):
+            self.add_error('yes_probability', 'YES probability must be between 1 and 99')
+        
+        return cleaned_data
 
 
 @admin.register(Market)
 class MarketAdmin(admin.ModelAdmin):
     form = MarketAdminForm
     
-    list_display = ('question', 'category', 'status', 'market_type', 'yes_probability', 'volume', 'created_at')
+    list_display = ('question', 'category', 'status', 'market_type', 'yes_probability', 'q_display', 'volume', 'created_at')
     list_filter = ('status', 'category', 'market_type', 'created_at')
     search_fields = ('question', 'description')
-    readonly_fields = ('created_at',)
+    readonly_fields = ('created_at', 'q_yes', 'q_no', 'b', 'q_display')
     
     fieldsets = (
         ('Market Info', {
@@ -30,7 +42,12 @@ class MarketAdmin(admin.ModelAdmin):
             'fields': ('market_type', 'yes_probability', 'options')
         }),
         ('Status & Dates', {
-            'fields': ('status', 'end_date', 'created_at', 'resolved_at', 'resolved_outcome')
+            'fields': ('status', 'end_date', 'created_at', 'resolved_at', 'resolved_outcome', 'trading_end_time')
+        }),
+        ('LMSR Parameters', {
+            'fields': ('q_yes', 'q_no', 'b', 'q_display'),
+            'description': 'These are automatically calculated from yes_probability and should not be modified directly.',
+            'classes': ('collapse',)
         }),
         ('Statistics', {
             'fields': ('volume',)
@@ -38,6 +55,38 @@ class MarketAdmin(admin.ModelAdmin):
     )
     
     date_hierarchy = 'created_at'
+    
+    def q_display(self, obj):
+        """Show current q values and corresponding price"""
+        if obj.q_yes is not None and obj.q_no is not None and obj.b:
+            try:
+                exp_yes = math.exp(float(obj.q_yes) / float(obj.b))
+                exp_no = math.exp(float(obj.q_no) / float(obj.b))
+                prob = exp_yes / (exp_yes + exp_no) * 100
+                return f"q_yes={obj.q_yes:.2f}, q_no={obj.q_no:.2f} → {prob:.1f}% YES"
+            except:
+                return "Error calculating price"
+        return "q values not set"
+    q_display.short_description = "LMSR q values (read-only)"
+    
+    def save_model(self, request, obj, form, change):
+        """Override save to calculate q_yes/q_no from yes_probability"""
+        # If creating new market or yes_probability changed, recalculate q values
+        if not change or form.cleaned_data.get('yes_probability') != obj.yes_probability:
+            yes_prob = float(obj.yes_probability) / 100.0
+            
+            # Clamp to valid range to avoid log(0)
+            yes_prob = max(0.01, min(0.99, yes_prob))
+            
+            b = float(obj.b) if obj.b else 100.0
+            
+            # LMSR: (q_yes - q_no) = b * ln(P_yes / P_no)
+            # We set q_no=0, so: q_yes = b * ln(P_yes / P_no)
+            prob_ratio = yes_prob / (1 - yes_prob)
+            obj.q_yes = b * math.log(prob_ratio)
+            obj.q_no = 0.0
+        
+        super().save_model(request, obj, form, change)
     
 
 
