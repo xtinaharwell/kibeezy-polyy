@@ -276,7 +276,8 @@ def b2c_result_callback(request):
     
     try:
         data = json.loads(request.body)
-        logger.info(f"B2C callback received: {json.dumps(data)}")
+        logger.info(f"🔔 B2C callback received at {timezone.now().isoformat()}")
+        logger.info(f"   Full payload: {json.dumps(data, indent=2)}")
         
         # Extract key fields from callback
         # Daraja may send different field names in Result and in timeout callback
@@ -299,31 +300,67 @@ def b2c_result_callback(request):
             data.get('ResponseDescription', 'No description')
         )
         
+        logger.info(f"   Extracted fields:")
+        logger.info(f"   - ResultCode: {result_code}")
+        logger.info(f"   - ExternalReference: {external_ref}")
+        logger.info(f"   - OriginatorConversationID: {originator_conv_id}")
+        logger.info(f"   - ConversationID: {conversation_id}")
+        logger.info(f"   - ResponseDescription: {response_description}")
+        
         if not external_ref and not conversation_id and not originator_conv_id:
-            logger.warning(f"B2C callback missing identifiers: {data}")
+            logger.warning(f"❌ B2C callback missing identifiers: {data}")
             return JsonResponse({'status': 'error', 'message': 'Missing identifiers'}, status=400)
         
         # Find transaction by external_ref, originator_conv_id, or conversation_id
         tx = None
+        lookup_methods = []
+        
         try:
+            # Method 1: external_ref
             if external_ref:
+                lookup_methods.append(f"by external_ref={external_ref}")
                 tx = Transaction.objects.get(external_ref=external_ref)
-            elif originator_conv_id:
-                # Search by checkout_request_id (which stores OriginatorConversationID)
-                tx = Transaction.objects.get(checkout_request_id=originator_conv_id)
-            elif conversation_id:
-                # Search in mpesa_response JSON for matching conversation_id
-                tx = Transaction.objects.filter(
-                    mpesa_response__contains={'conversation_id': conversation_id}
-                ).first()
+                logger.info(f"✅ Found transaction {tx.id} by external_ref")
         except Transaction.DoesNotExist:
-            logger.warning(f"Transaction not found for external_ref={external_ref}, originator_conv_id={originator_conv_id}, conv_id={conversation_id}")
+            logger.info(f"   Not found by external_ref")
+        
+        if not tx:
+            try:
+                # Method 2: checkout_request_id (stores OriginatorConversationID)
+                if originator_conv_id:
+                    lookup_methods.append(f"by checkout_request_id={originator_conv_id}")
+                    tx = Transaction.objects.get(checkout_request_id=originator_conv_id)
+                    logger.info(f"✅ Found transaction {tx.id} by checkout_request_id (OriginatorConversationID)")
+            except Transaction.DoesNotExist:
+                logger.info(f"   Not found by checkout_request_id/OriginatorConversationID")
+        
+        if not tx:
+            try:
+                # Method 3: merchant_request_id (stores ConversationID)
+                if conversation_id:
+                    lookup_methods.append(f"by merchant_request_id={conversation_id}")
+                    tx = Transaction.objects.get(merchant_request_id=conversation_id)
+                    logger.info(f"✅ Found transaction {tx.id} by merchant_request_id (ConversationID)")
+            except Transaction.DoesNotExist:
+                logger.info(f"   Not found by merchant_request_id/ConversationID")
+        
+        if not tx:
+            # Method 4: Search by mpesa_response JSON
+            lookup_methods.append(f"by mpesa_response JSON")
+            tx = Transaction.objects.filter(
+                type='WITHDRAWAL',
+                status='PENDING',
+                mpesa_response__contains={'originator_conversation_id': originator_conv_id}
+            ).first()
+            if tx:
+                logger.info(f"✅ Found transaction {tx.id} by mpesa_response.originator_conversation_id")
+        
+        if not tx:
+            logger.warning(f"❌ Transaction not found. Attempted lookups: {lookup_methods}")
             # Still respond 200 OK so Daraja doesn't keep retrying
             return JsonResponse({'status': 'error', 'message': 'transaction_not_found'})
         
-        if not tx:
-            logger.warning(f"No transaction found for callback: {external_ref or originator_conv_id or conversation_id}")
-            return JsonResponse({'status': 'error', 'message': 'transaction_not_found'})
+        logger.info(f"✅ Matched transaction {tx.id} for user {tx.user.phone_number}")
         
         # Check result code (0 = success)
         is_success = result_code == 0 or result_code == '0'
@@ -357,7 +394,7 @@ def b2c_result_callback(request):
                 )
                 
                 # Send notification (optional)
-                _send_payout_notification(user, tx)
+                _send_payout_notification(tx.user, tx)
             
             else:
                 # Payment failed
@@ -447,6 +484,76 @@ def get_transaction_status(request, transaction_id):
     
     except Exception as e:
         logger.error(f"Transaction status error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def sync_withdrawal_status(request):
+    """
+    MANUAL ENDPOINT: Sync withdrawal status from M-Pesa
+    
+    For debugging/manual testing when callbacks might be delayed or failed.
+    Checks if a pending withdrawal has been processed by M-Pesa.
+    
+    Request:
+        {
+            "transaction_id": 123
+        }
+    
+    Returns:
+        {
+            "status": "COMPLETED" | "FAILED" | "PENDING",
+            "amount": 500.00,
+            "message": "...",
+            "mpesa_response": {...}
+        }
+    """
+    try:
+        user = get_authenticated_user(request)
+        if not user:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        data = json.loads(request.body)
+        transaction_id = data.get('transaction_id')
+        
+        if not transaction_id:
+            return JsonResponse({'error': 'transaction_id is required'}, status=400)
+        
+        try:
+            transaction = Transaction.objects.get(id=transaction_id, user=user, type='WITHDRAWAL')
+        except Transaction.DoesNotExist:
+            return JsonResponse({'error': 'Withdrawal transaction not found'}, status=404)
+        
+        # Only sync if still pending
+        if transaction.status != 'PENDING':
+            return JsonResponse({
+                'status': transaction.status,
+                'amount': float(transaction.amount),
+                'message': f'Withdrawal is {transaction.status}',
+                'mpesa_response': transaction.mpesa_response
+            })
+        
+        # Transaction is pending - return current state
+        # Note: M-Pesa doesn't provide a query API for B2C like it does for STK Push
+        # The status will be updated via callback from M-Pesa
+        logger.info(f"Sync request for pending withdrawal tx_id={transaction.id}")
+        
+        return JsonResponse({
+            'status': 'PENDING',
+            'amount': float(transaction.amount),
+            'message': 'Withdrawal is pending. M-Pesa will send status via callback. Check back in a moment.',
+            'external_ref': transaction.external_ref,
+            'checkout_request_id': transaction.checkout_request_id,
+            'merchant_request_id': transaction.merchant_request_id,
+            'created_at': transaction.created_at.isoformat(),
+            'last_updated': transaction.updated_at.isoformat()
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Sync withdrawal status error: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 
