@@ -14,6 +14,8 @@ class Market(models.Model):
         ('Economy', 'Economy'),
         ('Crypto', 'Crypto'),
         ('Environment', 'Environment'),
+        # Mentions
+        # Live
     ]
 
     MARKET_TYPE_CHOICES = [
@@ -24,6 +26,7 @@ class Market(models.Model):
     question = models.CharField(max_length=500)
     category = models.CharField(max_length=100, choices=CATEGORY_CHOICES)
     description = models.TextField(blank=True, null=True)
+    # aws s3
     image_url = models.URLField(max_length=1000, blank=True, null=True)
     market_type = models.CharField(max_length=20, choices=MARKET_TYPE_CHOICES, default='BINARY')
     yes_probability = models.IntegerField(default=50)  # For BINARY markets

@@ -9,6 +9,8 @@ from api.validators import normalize_phone_number
 
 logger = logging.getLogger(__name__)
 
+# add africa talking notifications especially for payouts and market resolved. 
+
 
 def get_authenticated_user(request):
     """Get authenticated user from session or X-User-Phone-Number/X-User-Email header"""
