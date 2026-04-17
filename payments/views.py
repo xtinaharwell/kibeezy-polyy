@@ -206,9 +206,8 @@ def initiate_withdrawal(request):
             transaction.checkout_request_id = response.get('OriginatorConversationID')
             transaction.save()
             
-            # Deduct from user balance immediately
-            user.balance -= amount
-            user.save()
+            # DO NOT deduct balance yet - wait for callback to confirm success
+            # Balance will be deducted in b2c_result_callback when result_code == 0
             
             # Create notification
             create_notification(
@@ -220,13 +219,12 @@ def initiate_withdrawal(request):
                 related_transaction_id=transaction.id
             )
             
-            logger.info(f"Withdrawal initiated for user {user.phone_number}, amount: {amount}, new balance: {user.balance}")
+            logger.info(f"Withdrawal initiated for user {user.phone_number}, amount: {amount}, balance NOT yet deducted")
             return JsonResponse({
                 'message': 'Withdrawal initiated successfully',
                 'transaction_id': transaction.id,
                 'conversation_id': response.get('ConversationID'),
                 'amount': float(amount),
-                'new_balance': float(user.balance),
                 'status': 'PENDING'
             })
         else:
@@ -385,15 +383,17 @@ def b2c_result_callback(request):
                 })
                 tx.save()
                 
-                # For withdrawals, balance was already deducted during initiation
-                # No need to credit back - the payout was successful
+                # NOW deduct balance upon successful callback confirmation
+                user = tx.user
+                user.balance -= tx.amount
+                user.save()
                 
                 logger.info(
-                    f"Withdrawal completed: tx_id={tx.id}, user={tx.user.phone_number}, "
-                    f"amount={tx.amount}, balance remains: {tx.user.balance}"
+                    f"Withdrawal completed and balance deducted: tx_id={tx.id}, user={tx.user.phone_number}, "
+                    f"amount={tx.amount}, new_balance={user.balance}"
                 )
                 
-                # Send notification (optional)
+                # Send notification
                 _send_payout_notification(tx.user, tx)
             
             else:
