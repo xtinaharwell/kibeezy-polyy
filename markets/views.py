@@ -403,6 +403,12 @@ def place_bet(request):
                     else:
                         result = sell_no_shares(market, shares)
                 
+                # Process trading fee and distribute to LPs
+                if result:
+                    from markets.services import process_trading_fee
+                    cost_or_payout = result.get('cost_kes') or result.get('payout_kes', 0)
+                    process_trading_fee(market, cost_or_payout, bet)
+                
                 # Update balance for SELL orders with actual LMSR payout
                 if action == 'sell' and result:
                     sell_payout_kes = result.get('payout_kes', Decimal('0'))

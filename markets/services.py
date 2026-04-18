@@ -3,6 +3,9 @@ LMSR Trading Service Functions
 
 Handles all market operations: buying/selling shares, calculating costs/payouts.
 All trading operations are atomic and update the market's q_yes, q_no values.
+
+Fee Distribution Integration:
+After trades execute, fees are automatically distributed to liquidity providers.
 """
 
 from decimal import Decimal
@@ -19,6 +22,16 @@ from .lmsr import (
 
 # Fixed payout per share in KES
 PAYOUT_PER_SHARE = 100
+
+# Import LP configuration and service
+try:
+    from .lp_config import TRADING_FEE_PERCENT, APPLY_TRADING_FEES
+    from .liquidity_service import distribute_trading_fee
+    LIQUIDITY_SERVICE_AVAILABLE = True
+except ImportError:
+    LIQUIDITY_SERVICE_AVAILABLE = False
+    TRADING_FEE_PERCENT = 0.5
+    APPLY_TRADING_FEES = False
 
 
 @transaction.atomic
@@ -258,3 +271,62 @@ def is_market_open(market: Market) -> tuple:
         return False, "Trading has ended"
     
     return True, "Market is open"
+
+
+@transaction.atomic
+def process_trading_fee(market: Market, amount_kes: float, bet: Bet = None) -> dict:
+    """
+    Apply trading fee and distribute to liquidity providers.
+    
+    Called after every trade to calculate and distribute fees.
+    
+    Args:
+        market: Market instance
+        amount_kes: Original trade amount in KES
+        bet: The Bet record that generated this fee (optional)
+    
+    Returns:
+        {
+            'success': bool,
+            'fee_charged_kes': float,
+            'net_amount': float,
+            'num_providers': int,
+            'message': str,
+        }
+    """
+    if not APPLY_TRADING_FEES or not LIQUIDITY_SERVICE_AVAILABLE:
+        return {
+            'success': False,
+            'fee_charged_kes': 0,
+            'net_amount': amount_kes,
+            'num_providers': 0,
+            'message': 'Fee distribution not enabled',
+        }
+    
+    try:
+        # Get or create the pool
+        pool = market.liquidity_pool
+    except:
+        # Market doesn't have a liquidity pool yet
+        return {
+            'success': False,
+            'fee_charged_kes': 0,
+            'net_amount': amount_kes,
+            'num_providers': 0,
+            'message': 'Market has no liquidity pool',
+        }
+    
+    # Calculate fee
+    fee_charged = (amount_kes * TRADING_FEE_PERCENT) / 100
+    net_amount = amount_kes - fee_charged
+    
+    # Distribute fee to LPs
+    distribution_result = distribute_trading_fee(pool, fee_charged, bet)
+    
+    return {
+        'success': distribution_result.get('success', False),
+        'fee_charged_kes': fee_charged,
+        'net_amount': net_amount,
+        'num_providers': distribution_result.get('num_providers', 0),
+        'message': distribution_result.get('message', 'Fee processed'),
+    }

@@ -3,6 +3,13 @@ from .views import list_markets, place_bet, market_chat, market_details, get_pri
 from .dashboard_views import user_dashboard, transaction_history, initiate_withdrawal
 from .admin_views import admin_markets, resolve_market, create_market, delete_market
 from .analytics_views import analytics_dashboard, risk_dashboard
+from .liquidity_views import (
+    deposit_liquidity_view,
+    withdraw_liquidity_view,
+    claim_fees_view,
+    get_user_lp_positions,
+    get_liquidity_pool_stats,
+)
 
 urlpatterns = [
     path('', list_markets, name='list_markets'),
@@ -12,6 +19,13 @@ urlpatterns = [
     path('<int:market_id>/price-history/', get_price_history, name='price_history'),
     path('<int:market_id>/available-shares/', get_user_available_shares, name='available_shares'),
     path('preview-price/', preview_trade_price, name='preview_price'),
+    
+    # Liquidity provider endpoints
+    path('liquidity/deposit/', deposit_liquidity_view, name='liquidity_deposit'),
+    path('liquidity/withdraw/', withdraw_liquidity_view, name='liquidity_withdraw'),
+    path('liquidity/claim-fees/', claim_fees_view, name='claim_fees'),
+    path('liquidity/positions/', get_user_lp_positions, name='lp_positions'),
+    path('liquidity/pool-stats/', get_liquidity_pool_stats, name='pool_stats'),
     
     # Dashboard endpoints
     path('dashboard/', user_dashboard, name='user_dashboard'),
