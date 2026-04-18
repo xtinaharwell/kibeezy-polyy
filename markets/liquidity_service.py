@@ -454,3 +454,246 @@ def get_lp_performance(lp_provider: LiquidityProvider) -> dict:
         'yes_shares': lp_provider.yes_shares_owned,
         'no_shares': lp_provider.no_shares_owned,
     }
+
+
+# ============================================================================
+# IMPERMANENT LOSS CALCULATION
+# ============================================================================
+
+def calculate_impermanent_loss(lp_provider: LiquidityProvider) -> dict:
+    """
+    Calculate the impermanent loss for an LP position.
+    
+    IL occurs when market odds shift, causing the position value to diverge from
+    the initial capital. This is offset by fees earned.
+    
+    Returns:
+        {
+            'il_amount': float (KES),
+            'il_percent': float,
+            'current_position_value': float,
+            'hold_value': float,
+            'fees_earned': float,
+            'net_il_offset_by_fees': float,
+            'fees_offset_percent': float,
+            'entry_price_yes': float,
+            'entry_price_no': float,
+            'current_price_yes': float,
+            'current_price_no': float,
+        }
+    """
+    market = lp_provider.pool.market
+    capital = float(lp_provider.capital_provided)
+    fees_earned = float(lp_provider.total_fees_earned)
+    
+    # Current market prices
+    q_yes = float(market.q_yes)
+    q_no = float(market.q_no)
+    b = float(market.b)
+    
+    current_price_yes = calc_price_yes(q_yes, q_no, b)
+    current_price_no = calc_price_no(q_yes, q_no, b)
+    
+    # Estimate entry prices (50/50 split assumption)
+    # This is approximate - ideal would store entry prices at deposit time
+    entry_price_yes = 0.5
+    entry_price_no = 0.5
+    
+    # Current position value based on share holdings
+    yes_value = lp_provider.yes_shares_owned * current_price_yes * PAYOUT_PER_SHARE
+    no_value = lp_provider.no_shares_owned * current_price_no * PAYOUT_PER_SHARE
+    current_position_value = yes_value + no_value
+    
+    # "Hold value" = if we just held the capital
+    hold_value = capital
+    
+    # Impermanent loss
+    il_amount = hold_value - current_position_value
+    il_percent = (il_amount / hold_value * 100) if hold_value > 0 else 0
+    
+    # How much are fees offsetting IL?
+    fees_offset_percent = (fees_earned / il_amount * 100) if il_amount > 0 else 0
+    
+    return {
+        'il_amount': float(il_amount),
+        'il_percent': float(il_percent),
+        'current_position_value': float(current_position_value),
+        'hold_value': float(hold_value),
+        'fees_earned': float(fees_earned),
+        'net_il_offset_by_fees': float(max(0, il_amount - fees_earned)),
+        'fees_offset_percent': float(min(100, fees_offset_percent)),
+        'entry_price_yes': entry_price_yes,
+        'entry_price_no': entry_price_no,
+        'current_price_yes': current_price_yes,
+        'current_price_no': current_price_no,
+    }
+
+
+# ============================================================================
+# POOL RISK SCORING
+# ============================================================================
+
+def calculate_pool_risk_score(pool: LiquidityPool) -> dict:
+    """
+    Calculate risk score (1-10) for a liquidity pool.
+    
+    Factors considered:
+    - Market volatility (price movements)
+    - Trading volume consistency
+    - Number of LPs (concentration risk)
+    - Time to market resolution
+    
+    Returns:
+        {
+            'risk_score': int (1-10),
+            'risk_label': str,
+            'volatility_score': int,
+            'concentration_score': int,
+            'volume_score': int,
+            'time_to_resolution_score': int,
+            'factors': dict,
+        }
+    """
+    market = pool.market
+    providers = pool.providers.all()
+    
+    # Factor 1: Number of LPs (concentration)
+    # More LPs = less concentrated risk
+    num_providers = providers.count()
+    concentration_score = min(10, max(1, 11 - (num_providers // 2)))  # 1-10 scale
+    
+    # Factor 2: Volatility (approximate from price range)
+    # Using market question length and type as proxy (ideally track price history)
+    q_yes = float(market.q_yes)
+    q_no = float(market.q_no)
+    total_q = q_yes + q_no
+    if total_q > 0:
+        price_ratio = max(q_yes, q_no) / total_q
+        # More extreme odds = more volatile
+        volatility_score = min(10, max(1, int((price_ratio - 0.5) * 20 + 5)))
+    else:
+        volatility_score = 5
+    
+    # Factor 3: Volume (trading activity)
+    # Get recent bet count as proxy for volume
+    from .models import Bet
+    recent_bets = Bet.objects.filter(market=market, created_at__gte=timezone.now() - timedelta(days=7)).count()
+    volume_score = min(10, max(1, recent_bets // 5 if recent_bets > 0 else 1))
+    
+    # Factor 4: Time to resolution
+    # Market expiration in days
+    now = timezone.now()
+    resolution_diff = market.resolution_date - now
+    days_remaining = max(0, resolution_diff.total_seconds() / (24 * 3600))
+    
+    if days_remaining < 1:
+        time_score = 10  # Highest risk - resolving soon
+    elif days_remaining < 7:
+        time_score = 8
+    elif days_remaining < 30:
+        time_score = 5
+    else:
+        time_score = 2  # Lowest risk - lots of time
+    
+    # Calculate overall risk score (weighted average)
+    risk_score = int(
+        (volatility_score * 0.35 +  # Volatility weight 35%
+         concentration_score * 0.25 +  # Concentration weight 25%
+         volume_score * 0.20 +  # Volume weight 20%
+         time_score * 0.20) / 10  # Time weight 20%
+    )
+    risk_score = max(1, min(10, risk_score))
+    
+    # Risk labels
+    if risk_score <= 3:
+        risk_label = "Low Risk"
+    elif risk_score <= 6:
+        risk_label = "Medium Risk"
+    else:
+        risk_label = "High Risk"
+    
+    return {
+        'risk_score': risk_score,
+        'risk_label': risk_label,
+        'volatility_score': volatility_score,
+        'concentration_score': concentration_score,
+        'volume_score': volume_score,
+        'time_to_resolution_score': time_score,
+        'factors': {
+            'num_providers': num_providers,
+            'days_remaining': days_remaining,
+            'recent_bets': recent_bets,
+        }
+    }
+
+
+# ============================================================================
+# FEE ANALYTICS
+# ============================================================================
+
+def get_fee_analytics(lp_provider: LiquidityProvider) -> dict:
+    """
+    Get detailed fee breakdown and analytics for an LP position.
+    
+    Returns:
+        {
+            'total_fees_earned': float,
+            'fees_claimed': float,
+            'unclaimed_fees': float,
+            'avg_fee_per_day': float,
+            'fee_trend': list[{'date': str, 'fees': float}],
+            'biggest_fee_day': {'date': str, 'amount': float},
+            'lowest_fee_day': {'date': str, 'amount': float},
+        }
+    """
+    fees_earned = float(lp_provider.total_fees_earned)
+    fees_claimed = float(lp_provider.fees_claimed)
+    unclaimed_fees = float(lp_provider.unclaimed_fees)
+    
+    # Days invested
+    days_invested = max(1, (timezone.now() - lp_provider.entry_date).days)
+    avg_fee_per_day = fees_earned / days_invested if days_invested > 0 else 0
+    
+    # Get fee history grouped by day
+    fee_distributions = (
+        FeeDistribution.objects
+        .filter(provider=lp_provider)
+        .order_by('created_at')
+    )
+    
+    fee_trend = []
+    fee_by_day = {}
+    
+    for dist in fee_distributions:
+        date_key = dist.created_at.date().isoformat()
+        if date_key not in fee_by_day:
+            fee_by_day[date_key] = 0
+        fee_by_day[date_key] += float(dist.fee_amount)
+    
+    # Sort and create trend
+    for date_str in sorted(fee_by_day.keys()):
+        fee_trend.append({
+            'date': date_str,
+            'fees': round(fee_by_day[date_str], 2)
+        })
+    
+    # Find biggest and lowest fee days
+    biggest_fee_day = max(fee_by_day.items(), key=lambda x: x[1]) if fee_by_day else (None, 0)
+    lowest_fee_day = min(fee_by_day.items(), key=lambda x: x[1]) if fee_by_day else (None, 0)
+    
+    return {
+        'total_fees_earned': fees_earned,
+        'fees_claimed': fees_claimed,
+        'unclaimed_fees': unclaimed_fees,
+        'avg_fee_per_day': round(avg_fee_per_day, 2),
+        'fee_trend': fee_trend,
+        'biggest_fee_day': {
+            'date': biggest_fee_day[0] or 'N/A',
+            'amount': round(biggest_fee_day[1], 2)
+        } if biggest_fee_day[0] else {'date': 'N/A', 'amount': 0},
+        'lowest_fee_day': {
+            'date': lowest_fee_day[0] or 'N/A',
+            'amount': round(lowest_fee_day[1], 2)
+        } if lowest_fee_day[0] else {'date': 'N/A', 'amount': 0},
+        'days_invested': days_invested,
+    }

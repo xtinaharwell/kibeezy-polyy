@@ -18,10 +18,12 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from api.health import health_check
+from api.views import get_csrf_token
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', health_check, name='health_check'),
+    path('api/csrf-token/', get_csrf_token, name='csrf_token'),
 
     path('api/auth/', include('users.urls')),
     path('api/markets/', include('markets.urls')),

@@ -9,6 +9,10 @@ from .liquidity_views import (
     claim_fees_view,
     get_user_lp_positions,
     get_liquidity_pool_stats,
+    get_lp_analytics,
+    get_pool_risk_score,
+    get_fee_analytics_dashboard,
+    get_portfolio_il_analysis,
 )
 
 urlpatterns = [
@@ -26,6 +30,10 @@ urlpatterns = [
     path('liquidity/claim-fees/', claim_fees_view, name='claim_fees'),
     path('liquidity/positions/', get_user_lp_positions, name='lp_positions'),
     path('liquidity/pool-stats/', get_liquidity_pool_stats, name='pool_stats'),
+    path('liquidity/analytics/', get_lp_analytics, name='lp_analytics'),
+    path('liquidity/risk-score/', get_pool_risk_score, name='pool_risk_score'),
+    path('liquidity/fee-analytics/', get_fee_analytics_dashboard, name='fee_analytics'),
+    path('liquidity/il-analysis/', get_portfolio_il_analysis, name='il_analysis'),
     
     # Dashboard endpoints
     path('dashboard/', user_dashboard, name='user_dashboard'),

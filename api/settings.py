@@ -341,6 +341,16 @@ X_CONTENT_TYPE_OPTIONS = 'nosniff'  # Prevent MIME type sniffing
 # CACHING CONFIGURATION (for rate limiting and performance)
 # ============================================================================
 
+# REST Framework configuration
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
+
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',

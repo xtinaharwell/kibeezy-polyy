@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from django.views.decorators.csrf import ensure_csrf_cookie
 from .models import SupportMessage, SupportTicket
 from .serializers import SupportMessageSerializer, SupportTicketSerializer, SupportTicketListSerializer
 from users.models import CustomUser
@@ -88,6 +89,7 @@ def get_ticket_detail(request, ticket_id):
         )
 
 
+@ensure_csrf_cookie
 @api_view(['POST'])
 def create_support_ticket(request):
     """Create a new support ticket"""
