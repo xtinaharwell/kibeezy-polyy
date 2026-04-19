@@ -15,6 +15,7 @@ from .services import (
     get_market_prices,
     is_market_open,
 )
+from .bitcoin_service import BitcoinPriceService
 from payments.models import Transaction
 from api.validators import validate_amount, validate_bet_outcome, ValidationError
 from users.models import CustomUser
@@ -986,5 +987,64 @@ def bootstrap_market_liquidity(request):
     except Exception as e:
         logger.error(f"Bootstrap error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def get_bitcoin_market(request):
+    """
+    Get Bitcoin Up/Down market with current price data
+    
+    Endpoint: GET /api/markets/bitcoin/
+    
+    Returns:
+        - Market data with current Bitcoin price
+        - YES/NO probabilities
+        - Multipliers for trading
+        - Live price data
+    """
+    try:
+        market_data = BitcoinPriceService.get_bitcoin_market_with_price()
+        return JsonResponse(market_data, status=200)
+    except Exception as e:
+        logger.error(f"Error fetching Bitcoin market: {str(e)}")
+        return JsonResponse(
+            {'error': 'Failed to fetch Bitcoin market data'}, 
+            status=500
+        )
+
+
+@require_http_methods(["GET"])
+def get_bitcoin_price(request):
+    """
+    Get current Bitcoin price only (lightweight endpoint)
+    
+    Endpoint: GET /api/markets/bitcoin/price/
+    
+    Returns:
+        - current_price: Bitcoin price in USD
+        - timestamp: When the price was fetched
+        - source: Which API provided the data
+    """
+    try:
+        price = BitcoinPriceService.get_current_bitcoin_price()
+        
+        if price is None:
+            return JsonResponse(
+                {'error': 'Unable to fetch Bitcoin price'},
+                status=503
+            )
+        
+        return JsonResponse({
+            'current_price': price,
+            'formatted_price': f"${price:,.2f}",
+            'timestamp': timezone.now().isoformat(),
+            'source': 'coingecko'
+        }, status=200)
+    except Exception as e:
+        logger.error(f"Error fetching Bitcoin price: {str(e)}")
+        return JsonResponse(
+            {'error': 'Failed to fetch Bitcoin price'},
+            status=500
+        )
 
 

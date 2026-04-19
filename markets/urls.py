@@ -1,5 +1,15 @@
 from django.urls import path
-from .views import list_markets, place_bet, market_chat, market_details, get_price_history, preview_trade_price, get_user_available_shares
+from .views import (
+    list_markets, 
+    place_bet, 
+    market_chat, 
+    market_details, 
+    get_price_history, 
+    preview_trade_price, 
+    get_user_available_shares,
+    get_bitcoin_market,
+    get_bitcoin_price,
+)
 from .dashboard_views import user_dashboard, transaction_history, initiate_withdrawal
 from .admin_views import admin_markets, resolve_market, create_market, delete_market
 from .analytics_views import analytics_dashboard, risk_dashboard
@@ -23,6 +33,10 @@ urlpatterns = [
     path('<int:market_id>/price-history/', get_price_history, name='price_history'),
     path('<int:market_id>/available-shares/', get_user_available_shares, name='available_shares'),
     path('preview-price/', preview_trade_price, name='preview_price'),
+    
+    # Bitcoin market endpoints
+    path('bitcoin/', get_bitcoin_market, name='bitcoin_market'),
+    path('bitcoin/price/', get_bitcoin_price, name='bitcoin_price'),
     
     # Liquidity provider endpoints
     path('liquidity/deposit/', deposit_liquidity_view, name='liquidity_deposit'),
