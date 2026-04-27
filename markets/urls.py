@@ -13,6 +13,7 @@ from .views import (
 from .dashboard_views import user_dashboard, transaction_history, initiate_withdrawal
 from .admin_views import admin_markets, resolve_market, create_market, delete_market
 from .analytics_views import analytics_dashboard, risk_dashboard
+from .csrf_views import get_csrf_token
 from .liquidity_views import (
     deposit_liquidity_view,
     withdraw_liquidity_view,
@@ -29,6 +30,7 @@ from .liquidity_views import (
 urlpatterns = [
     path('', list_markets, name='list_markets'),
     path('bet/', place_bet, name='place_bet'),
+    path('csrf/', get_csrf_token, name='get_csrf_token'),
     path('<int:market_id>/chat/', market_chat, name='market_chat'),
     path('<int:market_id>/details/', market_details, name='market_details'),
     path('<int:market_id>/price-history/', get_price_history, name='price_history'),
