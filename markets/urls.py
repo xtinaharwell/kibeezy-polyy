@@ -23,6 +23,7 @@ from .liquidity_views import (
     get_pool_risk_score,
     get_fee_analytics_dashboard,
     get_portfolio_il_analysis,
+    add_liquidity_to_market,
 )
 
 urlpatterns = [
@@ -32,6 +33,7 @@ urlpatterns = [
     path('<int:market_id>/details/', market_details, name='market_details'),
     path('<int:market_id>/price-history/', get_price_history, name='price_history'),
     path('<int:market_id>/available-shares/', get_user_available_shares, name='available_shares'),
+    path('<int:market_id>/add-liquidity/', add_liquidity_to_market, name='add_liquidity_to_market'),
     path('preview-price/', preview_trade_price, name='preview_price'),
     
     # Bitcoin market endpoints

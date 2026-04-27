@@ -417,3 +417,59 @@ def get_portfolio_il_analysis(request):
         'net_il': round(total_net, 2),
         'positions': position_breakdown,
     })
+
+
+# ============================================================================
+# CONVENIENCE ENDPOINT: Market-specific add liquidity
+# ============================================================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_liquidity_to_market(request, market_id):
+    """
+    Convenience endpoint to add liquidity to a specific market.
+    
+    URL: POST /api/markets/{market_id}/add-liquidity/
+    
+    Request:
+    {
+        "amount_kes": float
+    }
+    
+    Response: Same as deposit_liquidity_view
+    """
+    amount_kes = request.data.get('amount_kes')
+    
+    if not amount_kes:
+        return Response(
+            {'error': 'amount_kes required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        amount_kes = float(amount_kes)
+    except (ValueError, TypeError):
+        return Response(
+            {'error': 'amount_kes must be a number'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        market = Market.objects.get(id=market_id)
+    except Market.DoesNotExist:
+        return Response(
+            {'error': f'Market {market_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    result = deposit_liquidity(market, request.user, amount_kes)
+    
+    if not result.get('success'):
+        return Response(result, status=status.HTTP_400_BAD_REQUEST)
+    
+    lp_provider = result.pop('lp_provider')
+    
+    return Response({
+        **result,
+        'lp_provider_id': lp_provider.id,
+    })

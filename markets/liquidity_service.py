@@ -109,6 +109,13 @@ def deposit_liquidity(
             'message': 'Deposit amount must be positive',
         }
     
+    # Check user balance
+    if user.balance < amount_kes:
+        return {
+            'success': False,
+            'message': f'Insufficient balance. You have {user.balance:.2f} KES but need {amount_kes:.2f} KES',
+        }
+    
     # Get or create pool
     pool = initialize_liquidity_pool(market)
     
@@ -127,6 +134,10 @@ def deposit_liquidity(
     # Cost = shares * probability * 100 (PAYOUT_PER_SHARE)
     yes_shares = half_capital / (p_yes * PAYOUT_PER_SHARE)
     no_shares = half_capital / (p_no * PAYOUT_PER_SHARE)
+    
+    # Deduct balance from user
+    user.balance -= Decimal(str(amount_kes))
+    user.save()
     
     # Get or create LP provider record
     lp_provider, created = LiquidityProvider.objects.get_or_create(
@@ -222,6 +233,11 @@ def withdraw_liquidity(lp_provider: LiquidityProvider) -> dict:
     pool.total_yes_shares -= lp_provider.yes_shares_owned
     pool.total_no_shares -= lp_provider.no_shares_owned
     pool.save()
+    
+    # Refund user balance (net withdrawal + fees earned)
+    user = lp_provider.user
+    user.balance += Decimal(str(total_payout))
+    user.save()
     
     # Mark LP provider as withdrawn (delete record)
     lp_provider.delete()
@@ -342,6 +358,11 @@ def claim_fees(lp_provider: LiquidityProvider) -> dict:
     lp_provider.fees_claimed += lp_provider.unclaimed_fees
     lp_provider.unclaimed_fees = Decimal('0')
     lp_provider.save()
+    
+    # Add claimed fees to user's balance
+    user = lp_provider.user
+    user.balance += Decimal(str(amount_to_claim))
+    user.save()
     
     # Mark distributions as claimed
     FeeDistribution.objects.filter(
