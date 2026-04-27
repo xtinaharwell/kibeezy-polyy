@@ -152,3 +152,5 @@ def calculate_payout_from_selling(
     # Payout is the difference
     payout_kes = (cost_before - cost_after) * 100
     return round(payout_kes, 2)
+ 
+    # Add TRADING FEES
