@@ -252,8 +252,12 @@ def initiate_withdrawal(request):
 def b2c_result_callback(request):
     """
     Handle B2C result callback from M-Pesa Daraja API
-    
-    Safaricom will POST result to ResultURL with callback containing:
+        CSRF EXEMPTION: This endpoint is @csrf_exempt because:
+    - Safaricom sends server-to-server POST callbacks (not from a browser)
+    - Cannot include CSRF tokens in callback payloads
+    - Safaricom servers are whitelisted in CSRF_TRUSTED_ORIGINS for extra security
+    - Request validation is done by matching OriginatorConversationID to stored transactions
+        Safaricom will POST result to ResultURL with callback containing:
     - Result (0 = success)
     - ResultCode (0 = success)
     - OriginatorConversationID or ExternalReference (to match transaction)

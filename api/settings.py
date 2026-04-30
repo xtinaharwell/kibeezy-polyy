@@ -291,7 +291,13 @@ CORS_ALLOW_HEADERS = [
     'x-user-phone-number',
     'x-user-email',
 ]
-CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001').split(',')
+# CSRF Whitelist: includes frontend + Safaricom Daraja callback servers
+CSRF_TRUSTED_ORIGINS = config(
+    'CSRF_TRUSTED_ORIGINS',
+    default='http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,'
+            'https://sandbox.safaricom.co.ke,https://api.safaricom.co.ke,'
+            'https://internalsandbox.safaricom.co.ke,https://cache.co.ke'
+).split(',')
 
 # ============================================================================
 # SECURITY SETTINGS (HIGH PRIORITY)
@@ -407,7 +413,7 @@ MPESA_PAYBILL = config('MPESA_PAYBILL', default='400000')  # Your Paybill/Shortc
 MPESA_PRODUCTION = config('MPESA_PRODUCTION', default=False, cast=bool)
 
 # B2C Callback URL
-MPESA_CALLBACK_URL = config('MPESA_CALLBACK_URL', default='https://CACHE.app/api/payments/b2c-callback/')
+MPESA_CALLBACK_URL = config('MPESA_CALLBACK_URL', default='https://cache.co.ke/api/payments/b2c-callback/')
 
 # Payout settings
 PAYOUT_PLATFORM_FEE_PCT = config('PAYOUT_PLATFORM_FEE_PCT', default='5.00')

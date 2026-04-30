@@ -33,7 +33,7 @@ CONSUMER_SECRET = getattr(settings, 'MPESA_CONSUMER_SECRET', '')
 INITIATOR_NAME = getattr(settings, 'MPESA_INITIATOR_NAME', 'testapi')
 SECURITY_CREDENTIAL_ENCRYPTED = getattr(settings, 'MPESA_SECURITY_CREDENTIAL_ENCRYPTED', '')
 PAYBILL = getattr(settings, 'MPESA_PAYBILL', '600000')  # Your Paybill/shortcode
-CALLBACK_URL = getattr(settings, 'MPESA_CALLBACK_URL', 'https://CACHE.co.ke/api/payments/b2c-callback/')
+CALLBACK_URL = getattr(settings, 'MPESA_CALLBACK_URL', 'https://cache.co.ke/api/payments/b2c-callback/')
 
 
 def get_oauth_token():
