@@ -283,7 +283,10 @@ def b2c_result_callback(request):
         
         # Extract key fields from callback
         # Daraja may send different field names in Result and in timeout callback
-        result_code = data.get('Result', {}).get('ResultCode') or data.get('ResultCode')
+        # NOTE: Use 'is not None' to handle ResultCode=0 (which is falsy but valid)
+        result_code = data.get('Result', {}).get('ResultCode')
+        if result_code is None:
+            result_code = data.get('ResultCode')
         external_ref = (
             data.get('Result', {}).get('ExternalReference') or 
             data.get('ExternalReference') or
@@ -369,7 +372,7 @@ def b2c_result_callback(request):
         
         with db_transaction.atomic():
             # Idempotency: check if already processed
-            if tx.status == Transaction.COMPLETED:
+            if tx.status == 'COMPLETED':
                 logger.info(f"Transaction {tx.id} already marked COMPLETED, skipping")
                 return JsonResponse({'status': 'ok', 'message': 'already_processed'})
             
@@ -377,7 +380,7 @@ def b2c_result_callback(request):
                 # Payment successful
                 logger.info(f"B2C payout success for transaction {tx.id}, recipient {tx.user.phone_number}")
                 
-                tx.status = Transaction.COMPLETED
+                tx.status = 'COMPLETED'
                 tx.mpesa_response = tx.mpesa_response or {}
                 tx.mpesa_response.update({
                     'callback_success': True,
@@ -407,7 +410,7 @@ def b2c_result_callback(request):
                     f"description={response_description}"
                 )
                 
-                tx.status = Transaction.FAILED
+                tx.status = 'FAILED'
                 tx.mpesa_response = tx.mpesa_response or {}
                 tx.mpesa_response.update({
                     'callback_success': False,
